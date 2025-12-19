@@ -32,18 +32,18 @@ const retrieveStats = () => {
     .catch((e) => {
       message.value = e.response?.data?.message || "Error loading terms";
     });
-  
+
   UserServices.getAllUsers()
     .then((response) => {
       // Add fullName property for display
-      users.value = response.data.map(user => ({
+      users.value = response.data.map((user) => ({
         ...user,
-        fullName: `${user.fName} ${user.lName}`
+        fullName: `${user.fName} ${user.lName}`,
       }));
       totalUsers.value = response.data.length;
     })
     .catch(() => {});
-  
+
   // Get total courses across all terms (no termId filter)
   CourseServices.getAllCourses()
     .then((response) => {
@@ -52,18 +52,21 @@ const retrieveStats = () => {
     .catch((e) => {
       console.error("Error loading all courses:", e);
     });
-  
+
   // Get total assignments across all terms (no filters)
   AssignedCourseServices.getAllAssignedCourses({})
     .then((response) => {
       // The transformResponse in services.js parses JSON and returns it
       // So response.data should be the array directly from the backend
       const assignments = response.data;
-      
+
       if (Array.isArray(assignments)) {
         totalAssignments.value = assignments.length;
       } else {
-        console.error("Unexpected response format for assigned courses:", assignments);
+        console.error(
+          "Unexpected response format for assigned courses:",
+          assignments
+        );
         totalAssignments.value = 0;
       }
     })
@@ -78,13 +81,18 @@ const retrieveStats = () => {
 
 const loadCoursesWithCount = () => {
   if (!selectedTerm.value) return;
-  
+
   const params = { termId: selectedTerm.value };
   // Only add userId if a user is explicitly selected (not null/undefined/empty string)
-  if (selectedUser.value !== null && selectedUser.value !== undefined && selectedUser.value !== '' && selectedUser.value !== 0) {
+  if (
+    selectedUser.value !== null &&
+    selectedUser.value !== undefined &&
+    selectedUser.value !== "" &&
+    selectedUser.value !== 0
+  ) {
     params.userId = selectedUser.value;
   }
-  
+
   CourseServices.getCoursesWithCount(params)
     .then((response) => {
       coursesWithCount.value = response.data.map((course) => {
@@ -169,15 +177,15 @@ const assignCourse = async (course) => {
     await AssignedCourseServices.createAssignedCourse(assignedCourse);
     message.value = "Course assigned successfully";
     assignmentDialogs.value[course.id] = false;
-    
+
     // Clear selection state
     course.selectedTermForAssignment = null;
     course.selectedCourseForAssignment = null;
     course.availableCourses = [];
-    
+
     // Reload the courses list
     await loadCoursesWithCount();
-    
+
     // Update total assignments count
     AssignedCourseServices.getAllAssignedCourses({})
       .then((response) => {
@@ -196,12 +204,14 @@ const assignCourse = async (course) => {
 const removeAssignment = async (course) => {
   // Get the assigned course ID - could be from assignedCourseInfo or assignedCourse array
   let assignedCourseId = null;
-  
+
   if (course.assignedCourseInfo) {
     // Need to get the AssignedCourse record ID, not the Course ID
     // We'll need to fetch it by courseId
     try {
-      const response = await AssignedCourseServices.getAssignedCourseByCourseId(course.id);
+      const response = await AssignedCourseServices.getAssignedCourseByCourseId(
+        course.id
+      );
       if (response.data && response.data.id) {
         assignedCourseId = response.data.id;
       }
@@ -215,7 +225,7 @@ const removeAssignment = async (course) => {
   } else if (course.assignedCourse && course.assignedCourse.id) {
     assignedCourseId = course.assignedCourse.id;
   }
-  
+
   if (!assignedCourseId) {
     message.value = "No assignment found to remove";
     return;
@@ -224,10 +234,10 @@ const removeAssignment = async (course) => {
   try {
     await AssignedCourseServices.deleteAssignedCourse(assignedCourseId);
     message.value = "Assignment removed successfully";
-    
+
     // Reload the courses list
     await loadCoursesWithCount();
-    
+
     // Update total assignments count
     AssignedCourseServices.getAllAssignedCourses({})
       .then((response) => {
@@ -254,7 +264,7 @@ onMounted(() => {
         <v-toolbar-title>Admin Dashboard</v-toolbar-title>
       </v-toolbar>
       <br />
-      
+
       <v-row>
         <v-col cols="12" md="3">
           <v-card>
@@ -289,9 +299,9 @@ onMounted(() => {
           </v-card>
         </v-col>
       </v-row>
-      
+
       <br />
-      
+
       <v-card>
         <v-card-title>Courses by Term</v-card-title>
         <v-card-text>
@@ -338,12 +348,26 @@ onMounted(() => {
               <td>{{ course.user?.fName }} {{ course.user?.lName }}</td>
               <td>
                 <span v-if="course.assignedCourseInfo">
-                  {{ course.assignedCourseInfo.term?.termName }} {{ course.assignedCourseInfo.courseNumber }}-{{ course.assignedCourseInfo.courseSection }}
+                  {{ course.assignedCourseInfo.term?.termName }}
+                  {{ course.assignedCourseInfo.courseNumber }}-{{
+                    course.assignedCourseInfo.courseSection
+                  }}
                 </span>
-                <span v-else-if="course.assignedCourse && course.assignedCourse.length > 0">
+                <span
+                  v-else-if="
+                    course.assignedCourse && course.assignedCourse.length > 0
+                  "
+                >
                   <!-- Fallback: try to get info from assignedCourse array directly -->
                   <span v-if="course.assignedCourse[0]?.assignedCourse">
-                    {{ course.assignedCourse[0].assignedCourse.term?.termName }} {{ course.assignedCourse[0].assignedCourse.courseNumber }}-{{ course.assignedCourse[0].assignedCourse.courseSection }}
+                    {{
+                      course.assignedCourse[0].assignedCourse.term?.termName
+                    }}
+                    {{
+                      course.assignedCourse[0].assignedCourse.courseNumber
+                    }}-{{
+                      course.assignedCourse[0].assignedCourse.courseSection
+                    }}
                   </span>
                   <span v-else>Has assignment but info missing</span>
                 </span>
@@ -355,10 +379,18 @@ onMounted(() => {
                   color="primary"
                   @click="openAssignmentDialog(course)"
                 >
-                  {{ (course.assignedCourseInfo || (course.assignedCourse && course.assignedCourse.length > 0)) ? "Change" : "Assign" }}
+                  {{
+                    course.assignedCourseInfo ||
+                    (course.assignedCourse && course.assignedCourse.length > 0)
+                      ? "Change"
+                      : "Assign"
+                  }}
                 </v-btn>
                 <v-btn
-                  v-if="course.assignedCourseInfo || (course.assignedCourse && course.assignedCourse.length > 0)"
+                  v-if="
+                    course.assignedCourseInfo ||
+                    (course.assignedCourse && course.assignedCourse.length > 0)
+                  "
                   small
                   color="error"
                   class="ml-2"
@@ -437,4 +469,3 @@ onMounted(() => {
     </v-container>
   </div>
 </template>
-
