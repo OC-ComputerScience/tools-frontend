@@ -1,0 +1,48 @@
+import { createRouter, createWebHistory } from "vue-router";
+
+import Login from "./views/Login.vue";
+import FacultyCoursesList from "./views/FacultyCoursesList.vue";
+import AdminDashboard from "./views/AdminDashboard.vue";
+import AdminTermsList from "./views/AdminTermsList.vue";
+import AdminUsersList from "./views/AdminUsersList.vue";
+import AdminCoursesList from "./views/AdminCoursesList.vue";
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    {
+      path: "/",
+      alias: "/login",
+      name: "login",
+      component: Login,
+    },
+    {
+      path: "/faculty/courses",
+      name: "facultyCourses",
+      component: FacultyCoursesList,
+    },
+    {
+      path: "/admin",
+      name: "adminDashboard",
+      component: AdminDashboard,
+    },
+    {
+      path: "/admin/terms",
+      name: "adminTerms",
+      component: AdminTermsList,
+    },
+    {
+      path: "/admin/users",
+      name: "adminUsers",
+      component: AdminUsersList,
+    },
+    {
+      path: "/admin/courses",
+      name: "adminCourses",
+      component: AdminCoursesList,
+    },
+  ],
+});
+
+export default router;
+
