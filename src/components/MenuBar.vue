@@ -3,11 +3,11 @@ import ocLogo from "/oc-logo-white.png";
 import { ref, onMounted } from "vue";
 import Utils from "../config/utils";
 import AuthServices from "../services/authServices";
-import { useRouter } from 'vue-router'
+import { useRouter } from "vue-router";
 
-const router = useRouter()
+const router = useRouter();
 const user = ref(null);
-const title = ref("Course Import");
+const title = ref("Tools");
 const initials = ref("");
 const name = ref("");
 const logoURL = ref("");
@@ -41,7 +41,13 @@ onMounted(() => {
 <template>
   <div>
     <v-app-bar app>
-      <router-link :to="user && user.isAdmin ? { name: 'adminDashboard' } : { name: 'facultyCourses' }">
+      <router-link
+        :to="
+          user && user.isAdmin
+            ? { name: 'adminDashboard' }
+            : { name: 'facultyCourses' }
+        "
+      >
         <v-img
           class="mx-2"
           :src="logoURL"
@@ -55,11 +61,29 @@ onMounted(() => {
       </v-toolbar-title>
       <v-spacer></v-spacer>
       <div v-if="user">
-        <v-btn v-if="!user.isAdmin" class="mx-2" :to="{ name: 'facultyCourses' }"> My Courses </v-btn>
-        <v-btn v-if="user.isAdmin" class="mx-2" :to="{ name: 'adminDashboard' }"> Dashboard </v-btn>
-        <v-btn v-if="user.isAdmin" class="mx-2" :to="{ name: 'adminTerms' }"> Terms </v-btn>
-        <v-btn v-if="user.isAdmin" class="mx-2" :to="{ name: 'adminUsers' }"> Users </v-btn>
-        <v-btn v-if="user.isAdmin" class="mx-2" :to="{ name: 'adminCourses' }"> Courses </v-btn>
+        <v-btn
+          v-if="!user.isAdmin"
+          class="mx-2"
+          :to="{ name: 'facultyCourses' }"
+        >
+          My Courses
+        </v-btn>
+        <v-btn
+          v-if="user.isAdmin"
+          class="mx-2"
+          :to="{ name: 'adminDashboard' }"
+        >
+          Dashboard
+        </v-btn>
+        <v-btn v-if="user.isAdmin" class="mx-2" :to="{ name: 'adminTerms' }">
+          Terms
+        </v-btn>
+        <v-btn v-if="user.isAdmin" class="mx-2" :to="{ name: 'adminUsers' }">
+          Users
+        </v-btn>
+        <v-btn v-if="user.isAdmin" class="mx-2" :to="{ name: 'adminCourses' }">
+          Courses
+        </v-btn>
       </div>
       <v-menu bottom min-width="200px" rounded offset-y v-if="user">
         <template v-slot:activator="{ props }">
@@ -81,9 +105,7 @@ onMounted(() => {
               <p class="text-caption mt-1">
                 {{ user.email }}
               </p>
-              <p v-if="user.isAdmin" class="text-caption mt-1">
-                Admin
-              </p>
+              <p v-if="user.isAdmin" class="text-caption mt-1">Admin</p>
               <v-divider class="my-3"></v-divider>
               <v-btn depressed rounded text @click="logout"> Logout </v-btn>
             </div>
@@ -93,4 +115,3 @@ onMounted(() => {
     </v-app-bar>
   </div>
 </template>
-
