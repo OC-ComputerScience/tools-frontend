@@ -27,10 +27,28 @@ const retrieveCourses = () => {
     courses.value = [];
     return;
   }
-  
+
   CourseServices.getCoursesWithCount({ termId: selectedTerm.value })
     .then((response) => {
-      courses.value = response.data;
+      courses.value = response.data.sort((a, b) => {
+        // Sort by courseNumber first, then by courseSection in ascending order
+        const courseNumberCompare = a.courseNumber.localeCompare(
+          b.courseNumber,
+          undefined,
+          {
+            numeric: true,
+            sensitivity: "base",
+          }
+        );
+        if (courseNumberCompare !== 0) {
+          return courseNumberCompare;
+        }
+        // If courseNumbers are the same, sort by courseSection
+        return a.courseSection.localeCompare(b.courseSection, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
     })
     .catch((e) => {
       message.value = e.response?.data?.message || "Error loading courses";
@@ -49,7 +67,7 @@ onMounted(() => {
         <v-toolbar-title>Manage Courses</v-toolbar-title>
       </v-toolbar>
       <br />
-      
+
       <v-card>
         <v-card-title>Select Term</v-card-title>
         <v-card-text>
@@ -63,9 +81,9 @@ onMounted(() => {
           ></v-select>
         </v-card-text>
       </v-card>
-      
+
       <br />
-      
+
       <v-card v-if="selectedTerm">
         <v-card-title>Courses for Selected Term</v-card-title>
         <v-card-text>
@@ -95,4 +113,3 @@ onMounted(() => {
     </v-container>
   </div>
 </template>
-
