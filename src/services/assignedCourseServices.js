@@ -4,8 +4,8 @@ export default {
   getAllAssignedCourses(params = {}) {
     return apiClient.get("assignedCourses", { params });
   },
-  getAssignedCourseByCourseId(courseId) {
-    return apiClient.get(`assignedCourses/course/${courseId}`);
+  getAssignedCourseBySectionId(sectionId) {
+    return apiClient.get(`assignedCourses/section/${sectionId}`);
   },
   getAssignedCourse(id) {
     return apiClient.get(`assignedCourses/${id}`);
@@ -19,8 +19,8 @@ export default {
   deleteAssignedCourse(id) {
     return apiClient.delete(`assignedCourses/${id}`);
   },
-  deleteAssignedCourseByCourseId(courseId) {
-    return apiClient.delete(`assignedCourses/course/${courseId}`);
+  deleteAssignedCourseBySectionId(sectionId) {
+    return apiClient.delete(`assignedCourses/section/${sectionId}`);
   },
 };
 
