@@ -23,3 +23,4 @@ export default {
     return apiClient.delete(`meetingTimes/course/${courseId}`);
   },
 };
+
