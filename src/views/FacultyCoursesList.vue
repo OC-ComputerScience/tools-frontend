@@ -35,26 +35,46 @@ const retrieveCourses = async () => {
 
     // The backend now includes assignedCourse data in the response
     // Handle it as an array (hasMany relationship) but take the first one if it exists
-    courses.value = response.data.map((course) => {
-      // If assignedCourse is an array, take the first one; if it's already an object, use it
-      if (
-        course.assignedCourse &&
-        Array.isArray(course.assignedCourse) &&
-        course.assignedCourse.length > 0
-      ) {
-        course.assignedCourse = course.assignedCourse[0];
-      } else if (
-        course.assignedCourse &&
-        !Array.isArray(course.assignedCourse)
-      ) {
-        // Already a single object, keep it
-        course.assignedCourse = course.assignedCourse;
-      } else {
-        // No assigned course
-        course.assignedCourse = null;
-      }
-      return course;
-    });
+    courses.value = response.data
+      .map((course) => {
+        // If assignedCourse is an array, take the first one; if it's already an object, use it
+        if (
+          course.assignedCourse &&
+          Array.isArray(course.assignedCourse) &&
+          course.assignedCourse.length > 0
+        ) {
+          course.assignedCourse = course.assignedCourse[0];
+        } else if (
+          course.assignedCourse &&
+          !Array.isArray(course.assignedCourse)
+        ) {
+          // Already a single object, keep it
+          course.assignedCourse = course.assignedCourse;
+        } else {
+          // No assigned course
+          course.assignedCourse = null;
+        }
+        return course;
+      })
+      .sort((a, b) => {
+        // Sort by courseNumber first, then by courseSection in ascending order
+        const courseNumberCompare = a.courseNumber.localeCompare(
+          b.courseNumber,
+          undefined,
+          {
+            numeric: true,
+            sensitivity: "base",
+          }
+        );
+        if (courseNumberCompare !== 0) {
+          return courseNumberCompare;
+        }
+        // If courseNumbers are the same, sort by courseSection
+        return a.courseSection.localeCompare(b.courseSection, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
   } catch (e) {
     message.value = e.response?.data?.message || "Error loading courses";
   }
@@ -115,7 +135,46 @@ const loadAssignedCourse = (courseId) => {
     });
 };
 
-const openAssignmentDialog = (course) => {
+// Helper function to check if a term started in the past
+const isTermInPast = (term) => {
+  if (!term || !term.startDate) return false;
+
+  const startDate = new Date(term.startDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset time to midnight for accurate date comparison
+  startDate.setHours(0, 0, 0, 0);
+
+  return startDate < today;
+};
+
+// Helper function to get the term for a course
+const getCourseTerm = (course) => {
+  return course.term || terms.value.find((t) => t.id === course.termId);
+};
+
+const openAssignmentDialog = async (course) => {
+  // Check if course's term started in the past
+  const courseTerm = getCourseTerm(course);
+
+  if (courseTerm && isTermInPast(courseTerm)) {
+    // Auto-assign course to itself
+    const assignedCourse = {
+      courseId: course.id,
+      assignedCourseId: course.id,
+    };
+
+    try {
+      await AssignedCourseServices.createAssignedCourse(assignedCourse);
+      message.value = "Course assigned to itself successfully";
+      await retrieveCourses();
+    } catch (e) {
+      message.value = e.response?.data?.message || "Error assigning course";
+      console.error("Error assigning course:", e);
+    }
+    return; // Don't show dialog
+  }
+
+  // Normal flow - show dialog
   assignmentDialogs.value[course.id] = true;
   if (!course.availableTerms) {
     loadAvailableTerms(course);
@@ -192,10 +251,12 @@ const assignCourse = async (course) => {
 };
 
 const removeAssignment = async (course) => {
-  if (!course.assignedCourse) return;
+  if (!course.assignedCourse && !course.assignedCourseInfo) return;
 
   try {
-    await AssignedCourseServices.deleteAssignedCourse(course.assignedCourse.id);
+    // Use deleteAssignedCourseByCourseId to ensure we delete the correct assignment
+    // This deletes by the courseId, which is more reliable than using the assignedCourse.id
+    await AssignedCourseServices.deleteAssignedCourseByCourseId(course.id);
     message.value = "Assignment removed successfully";
 
     // Reload the courses list for the current term
@@ -231,15 +292,15 @@ onMounted(() => {
           <br />
           <div class="text-body-1">
             If there are courses that you taught in a previous semester that you
-            don't teach in Fall 2026, you can also select a Blackboard course to
-            import into the Canvas course for the corresponding term and course
-            number so we will have it for the future.
+            don't teach in Fall 2026, you can also select the past term and
+            assign the Blackboard course from that term to import into the
+            Canvas course so the course data is available for the future.
           </div>
         </v-card-text>
       </v-card>
 
       <v-card>
-        <v-card-title>Select Term</v-card-title>
+        <v-card-title>Select Term for Canvas Courses</v-card-title>
         <v-card-text>
           <v-select
             v-model="selectedTerm"
@@ -255,7 +316,7 @@ onMounted(() => {
       <br />
 
       <v-card v-if="selectedTerm">
-        <v-card-title>Courses for Selected Term</v-card-title>
+        <v-card-title>Canvas Courses for Selected Term</v-card-title>
         <v-card-text>
           <b>{{ message }}</b>
         </v-card-text>
@@ -287,6 +348,9 @@ onMounted(() => {
                 <v-btn
                   small
                   color="primary"
+                  :disabled="
+                    course.assignedCourse && isTermInPast(getCourseTerm(course))
+                  "
                   @click="openAssignmentDialog(course)"
                 >
                   {{ course.assignedCourse ? "Change" : "Assign" }}

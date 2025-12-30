@@ -95,22 +95,42 @@ const loadCoursesWithCount = () => {
 
   CourseServices.getCoursesWithCount(params)
     .then((response) => {
-      coursesWithCount.value = response.data.map((course) => {
-        // Initialize assignment-related properties
-        if (!course.availableTerms) {
-          course.availableTerms = null;
-        }
-        if (!course.selectedTermForAssignment) {
-          course.selectedTermForAssignment = null;
-        }
-        if (!course.selectedCourseForAssignment) {
-          course.selectedCourseForAssignment = null;
-        }
-        if (!course.availableCourses) {
-          course.availableCourses = [];
-        }
-        return course;
-      });
+      coursesWithCount.value = response.data
+        .map((course) => {
+          // Initialize assignment-related properties
+          if (!course.availableTerms) {
+            course.availableTerms = null;
+          }
+          if (!course.selectedTermForAssignment) {
+            course.selectedTermForAssignment = null;
+          }
+          if (!course.selectedCourseForAssignment) {
+            course.selectedCourseForAssignment = null;
+          }
+          if (!course.availableCourses) {
+            course.availableCourses = [];
+          }
+          return course;
+        })
+        .sort((a, b) => {
+          // Sort by courseNumber first, then by courseSection in ascending order
+          const courseNumberCompare = a.courseNumber.localeCompare(
+            b.courseNumber,
+            undefined,
+            {
+              numeric: true,
+              sensitivity: "base",
+            }
+          );
+          if (courseNumberCompare !== 0) {
+            return courseNumberCompare;
+          }
+          // If courseNumbers are the same, sort by courseSection
+          return a.courseSection.localeCompare(b.courseSection, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        });
       // Don't update totalCourses here - it's already set from all terms in retrieveStats
     })
     .catch((e) => {
@@ -118,7 +138,56 @@ const loadCoursesWithCount = () => {
     });
 };
 
-const openAssignmentDialog = (course) => {
+// Helper function to check if a term started in the past
+const isTermInPast = (term) => {
+  if (!term || !term.startDate) return false;
+
+  const startDate = new Date(term.startDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset time to midnight for accurate date comparison
+  startDate.setHours(0, 0, 0, 0);
+
+  return startDate < today;
+};
+
+// Helper function to get the term for a course
+const getCourseTerm = (course) => {
+  return course.term || terms.value.find((t) => t.id === course.termId);
+};
+
+const openAssignmentDialog = async (course) => {
+  // Check if course's term started in the past
+  const courseTerm = getCourseTerm(course);
+
+  if (courseTerm && isTermInPast(courseTerm)) {
+    // Auto-assign course to itself
+    const assignedCourse = {
+      courseId: course.id,
+      assignedCourseId: course.id,
+    };
+
+    try {
+      await AssignedCourseServices.createAssignedCourse(assignedCourse);
+      message.value = "Course assigned to itself successfully";
+      await loadCoursesWithCount();
+
+      // Update total assignments count
+      AssignedCourseServices.getAllAssignedCourses({})
+        .then((response) => {
+          const assignments = response.data;
+          if (Array.isArray(assignments)) {
+            totalAssignments.value = assignments.length;
+          }
+        })
+        .catch(() => {});
+    } catch (e) {
+      message.value = e.response?.data?.message || "Error assigning course";
+      console.error("Error assigning course:", e);
+    }
+    return; // Don't show dialog
+  }
+
+  // Normal flow - show dialog
   assignmentDialogs.value[course.id] = true;
   if (!course.availableTerms) {
     loadAvailableTerms(course);
@@ -202,37 +271,19 @@ const assignCourse = async (course) => {
 };
 
 const removeAssignment = async (course) => {
-  // Get the assigned course ID - could be from assignedCourseInfo or assignedCourse array
-  let assignedCourseId = null;
-
-  if (course.assignedCourseInfo) {
-    // Need to get the AssignedCourse record ID, not the Course ID
-    // We'll need to fetch it by courseId
-    try {
-      const response = await AssignedCourseServices.getAssignedCourseByCourseId(
-        course.id
-      );
-      if (response.data && response.data.id) {
-        assignedCourseId = response.data.id;
-      }
-    } catch (e) {
-      console.error("Error fetching assigned course:", e);
-      message.value = "Error removing assignment";
-      return;
-    }
-  } else if (course.assignedCourse && course.assignedCourse.length > 0) {
-    assignedCourseId = course.assignedCourse[0].id;
-  } else if (course.assignedCourse && course.assignedCourse.id) {
-    assignedCourseId = course.assignedCourse.id;
-  }
-
-  if (!assignedCourseId) {
+  if (
+    !course.assignedCourseInfo &&
+    !(course.assignedCourse && course.assignedCourse.length > 0) &&
+    !(course.assignedCourse && course.assignedCourse.id)
+  ) {
     message.value = "No assignment found to remove";
     return;
   }
 
   try {
-    await AssignedCourseServices.deleteAssignedCourse(assignedCourseId);
+    // Use deleteAssignedCourseByCourseId to ensure we delete the correct assignment
+    // This deletes by the courseId, which is more reliable than trying to get the AssignedCourse record ID
+    await AssignedCourseServices.deleteAssignedCourseByCourseId(course.id);
     message.value = "Assignment removed successfully";
 
     // Reload the courses list
@@ -360,9 +411,7 @@ onMounted(() => {
                 >
                   <!-- Fallback: try to get info from assignedCourse array directly -->
                   <span v-if="course.assignedCourse[0]?.assignedCourse">
-                    {{
-                      course.assignedCourse[0].assignedCourse.term?.termName
-                    }}
+                    {{ course.assignedCourse[0].assignedCourse.term?.termName }}
                     {{
                       course.assignedCourse[0].assignedCourse.courseNumber
                     }}-{{
@@ -377,6 +426,12 @@ onMounted(() => {
                 <v-btn
                   small
                   color="primary"
+                  :disabled="
+                    (course.assignedCourseInfo ||
+                      (course.assignedCourse &&
+                        course.assignedCourse.length > 0)) &&
+                    isTermInPast(getCourseTerm(course))
+                  "
                   @click="openAssignmentDialog(course)"
                 >
                   {{

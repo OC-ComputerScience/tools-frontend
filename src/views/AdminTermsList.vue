@@ -6,7 +6,7 @@ const terms = ref([]);
 const message = ref("Manage Terms");
 const dialog = ref(false);
 const editedTerm = ref({});
-const defaultTerm = ref({ termName: "" });
+const defaultTerm = ref({ termName: "", startDate: null });
 
 const retrieveTerms = () => {
   TermServices.getAllTerms()
@@ -33,7 +33,7 @@ const saveTerm = () => {
     message.value = "Term name is required";
     return;
   }
-  
+
   if (editedTerm.value.id) {
     TermServices.updateTerm(editedTerm.value.id, editedTerm.value)
       .then(() => {
@@ -84,7 +84,7 @@ onMounted(() => {
         <v-btn color="primary" @click="openDialog()">Add Term</v-btn>
       </v-toolbar>
       <br />
-      
+
       <v-card>
         <v-card-title>Terms</v-card-title>
         <v-card-text>
@@ -95,6 +95,7 @@ onMounted(() => {
             <tr>
               <th class="text-left">ID</th>
               <th class="text-left">Term Name</th>
+              <th class="text-left">Start Date</th>
               <th class="text-left">Actions</th>
             </tr>
           </thead>
@@ -102,6 +103,7 @@ onMounted(() => {
             <tr v-for="term in terms" :key="term.id">
               <td>{{ term.id }}</td>
               <td>{{ term.termName }}</td>
+              <td>{{ term.startDate || "N/A" }}</td>
               <td>
                 <v-icon small class="mx-2" @click="openDialog(term)">
                   mdi-pencil
@@ -114,18 +116,24 @@ onMounted(() => {
           </tbody>
         </v-table>
       </v-card>
-      
+
       <!-- Edit/Create Dialog -->
       <v-dialog v-model="dialog" max-width="500px">
         <v-card>
           <v-card-title>
-            {{ editedTerm.id ? 'Edit Term' : 'Create Term' }}
+            {{ editedTerm.id ? "Edit Term" : "Create Term" }}
           </v-card-title>
           <v-card-text>
             <v-text-field
               v-model="editedTerm.termName"
               label="Term Name"
               required
+            ></v-text-field>
+            <v-text-field
+              v-model="editedTerm.startDate"
+              label="Start Date"
+              type="date"
+              hint="Date when the term starts"
             ></v-text-field>
           </v-card-text>
           <v-card-actions>
@@ -138,4 +146,3 @@ onMounted(() => {
     </v-container>
   </div>
 </template>
-
