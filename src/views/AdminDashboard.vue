@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from "vue";
-import CourseServices from "../services/courseServices";
+import SectionServices from "../services/sectionServices";
 import TermServices from "../services/termServices";
 import UserServices from "../services/userServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
@@ -45,7 +45,7 @@ const retrieveStats = () => {
     .catch(() => {});
 
   // Get total courses across all terms (no termId filter)
-  CourseServices.getAllCourses()
+  SectionServices.getAllSections()
     .then((response) => {
       totalCourses.value = response.data.length;
     })
@@ -93,7 +93,7 @@ const loadCoursesWithCount = () => {
     params.userId = selectedUser.value;
   }
 
-  CourseServices.getCoursesWithCount(params)
+  SectionServices.getSectionsWithCount(params)
     .then((response) => {
       coursesWithCount.value = response.data
         .map((course) => {
@@ -162,8 +162,8 @@ const openAssignmentDialog = async (course) => {
   if (courseTerm && isTermInPast(courseTerm)) {
     // Auto-assign course to itself
     const assignedCourse = {
-      courseId: course.id,
-      assignedCourseId: course.id,
+      sectionId: course.id,
+      assignedSectionId: course.id,
     };
 
     try {
@@ -238,8 +238,8 @@ const assignCourse = async (course) => {
   }
 
   const assignedCourse = {
-    courseId: course.id,
-    assignedCourseId: course.selectedCourseForAssignment,
+    sectionId: course.id,
+    assignedSectionId: course.selectedCourseForAssignment,
   };
 
   try {
@@ -272,7 +272,7 @@ const assignCourse = async (course) => {
 
 const removeAssignment = async (course) => {
   if (
-    !course.assignedCourseInfo &&
+    !course.assignedSectionInfo &&
     !(course.assignedCourse && course.assignedCourse.length > 0) &&
     !(course.assignedCourse && course.assignedCourse.id)
   ) {
@@ -283,7 +283,7 @@ const removeAssignment = async (course) => {
   try {
     // Use deleteAssignedCourseByCourseId to ensure we delete the correct assignment
     // This deletes by the courseId, which is more reliable than trying to get the AssignedCourse record ID
-    await AssignedCourseServices.deleteAssignedCourseByCourseId(course.id);
+    await AssignedCourseServices.deleteAssignedCourseBySectionId(course.id);
     message.value = "Assignment removed successfully";
 
     // Reload the courses list
@@ -398,10 +398,10 @@ onMounted(() => {
               <td>{{ course.courseDescription }}</td>
               <td>{{ course.user?.fName }} {{ course.user?.lName }}</td>
               <td>
-                <span v-if="course.assignedCourseInfo">
-                  {{ course.assignedCourseInfo.term?.termName }}
-                  {{ course.assignedCourseInfo.courseNumber }}-{{
-                    course.assignedCourseInfo.courseSection
+                <span v-if="course.assignedSectionInfo">
+                  {{ course.assignedSectionInfo.term?.termName }}
+                  {{ course.assignedSectionInfo.courseNumber }}-{{
+                    course.assignedSectionInfo.courseSection
                   }}
                 </span>
                 <span
@@ -427,7 +427,7 @@ onMounted(() => {
                   small
                   color="primary"
                   :disabled="
-                    (course.assignedCourseInfo ||
+                    (course.assignedSectionInfo ||
                       (course.assignedCourse &&
                         course.assignedCourse.length > 0)) &&
                     isTermInPast(getCourseTerm(course))
@@ -435,7 +435,7 @@ onMounted(() => {
                   @click="openAssignmentDialog(course)"
                 >
                   {{
-                    course.assignedCourseInfo ||
+                    course.assignedSectionInfo ||
                     (course.assignedCourse && course.assignedCourse.length > 0)
                       ? "Change"
                       : "Assign"
@@ -443,7 +443,7 @@ onMounted(() => {
                 </v-btn>
                 <v-btn
                   v-if="
-                    course.assignedCourseInfo ||
+                    course.assignedSectionInfo ||
                     (course.assignedCourse && course.assignedCourse.length > 0)
                   "
                   small

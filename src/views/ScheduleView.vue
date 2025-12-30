@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed, watch } from "vue";
 import TermServices from "../services/termServices";
-import CourseServices from "../services/courseServices";
+import SectionServices from "../services/sectionServices";
 import MeetingTimeServices from "../services/meetingTimeServices";
 import UserServices from "../services/userServices";
 
@@ -74,7 +74,7 @@ const retrieveCourses = async () => {
       params.userId = selectedUser.value;
     }
     
-    const response = await CourseServices.getAllCourses(params);
+    const response = await SectionServices.getAllSections(params);
 
     courses.value = response.data;
     

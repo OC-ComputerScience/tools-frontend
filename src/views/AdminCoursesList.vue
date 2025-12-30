@@ -1,5 +1,5 @@
 <script setup>
-import CourseServices from "../services/courseServices";
+import SectionServices from "../services/sectionServices";
 import TermServices from "../services/termServices";
 import { ref, onMounted } from "vue";
 
@@ -28,7 +28,7 @@ const retrieveCourses = () => {
     return;
   }
 
-  CourseServices.getCoursesWithCount({ termId: selectedTerm.value })
+  SectionServices.getSectionsWithCount({ termId: selectedTerm.value })
     .then((response) => {
       courses.value = response.data.sort((a, b) => {
         // Sort by courseNumber first, then by courseSection in ascending order

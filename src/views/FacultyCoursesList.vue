@@ -1,5 +1,5 @@
 <script setup>
-import CourseServices from "../services/courseServices";
+import SectionServices from "../services/sectionServices";
 import TermServices from "../services/termServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
 import Utils from "../config/utils.js";
@@ -29,7 +29,7 @@ const retrieveCourses = async () => {
   }
 
   try {
-    const response = await CourseServices.getCoursesByUserEmail(user.email, {
+    const response = await SectionServices.getSectionsByUserEmail(user.email, {
       termId: selectedTerm.value,
     });
 
@@ -81,7 +81,7 @@ const retrieveCourses = async () => {
 };
 
 const loadAssignedCourse = (courseId) => {
-  AssignedCourseServices.getAssignedCourseByCourseId(courseId)
+  AssignedCourseServices.getAssignedCourseBySectionId(courseId)
     .then((response) => {
       // Find the course index for direct array update
       const courseIndex = courses.value.findIndex((c) => c.id === courseId);
@@ -159,8 +159,8 @@ const openAssignmentDialog = async (course) => {
   if (courseTerm && isTermInPast(courseTerm)) {
     // Auto-assign course to itself
     const assignedCourse = {
-      courseId: course.id,
-      assignedCourseId: course.id,
+      sectionId: course.id,
+      assignedSectionId: course.id,
     };
 
     try {
@@ -201,7 +201,7 @@ const loadCoursesForTerm = (course, termId) => {
     return;
   }
 
-  CourseServices.getAllCourses({ termId: termId })
+  SectionServices.getAllSections({ termId: termId })
     .then((response) => {
       // Filter courses to only show those matching the current course's courseNumber
       // Transform items to include a title property for display
@@ -225,8 +225,8 @@ const assignCourse = async (course) => {
   }
 
   const assignedCourse = {
-    courseId: course.id,
-    assignedCourseId: course.selectedCourseForAssignment,
+    sectionId: course.id,
+    assignedSectionId: course.selectedCourseForAssignment,
   };
 
   try {
@@ -256,7 +256,7 @@ const removeAssignment = async (course) => {
   try {
     // Use deleteAssignedCourseByCourseId to ensure we delete the correct assignment
     // This deletes by the courseId, which is more reliable than using the assignedCourse.id
-    await AssignedCourseServices.deleteAssignedCourseByCourseId(course.id);
+    await AssignedCourseServices.deleteAssignedCourseBySectionId(course.id);
     message.value = "Assignment removed successfully";
 
     // Reload the courses list for the current term
@@ -337,10 +337,10 @@ onMounted(() => {
               <td>{{ course.courseDescription }}</td>
               <td>
                 <span v-if="course.assignedCourse">
-                  {{ course.assignedCourse.assignedCourse?.courseNumber }}-{{
-                    course.assignedCourse.assignedCourse?.courseSection
+                  {{ course.assignedCourse.assignedSection?.courseNumber }}-{{
+                    course.assignedCourse.assignedSection?.courseSection
                   }}
-                  ({{ course.assignedCourse.assignedCourse?.term?.termName }})
+                  ({{ course.assignedCourse.assignedSection?.term?.termName }})
                 </span>
                 <span v-else>None</span>
               </td>
