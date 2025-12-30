@@ -66,7 +66,10 @@ onMounted(() => {
           class="mx-2"
           :to="{ name: 'facultyCourses' }"
         >
-          My Courses
+          Import Courses
+        </v-btn>
+        <v-btn class="mx-2" :to="{ name: 'schedule' }">
+          Schedule
         </v-btn>
         <v-btn
           v-if="user.isAdmin"
