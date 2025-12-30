@@ -6,6 +6,7 @@ import AdminDashboard from "./views/AdminDashboard.vue";
 import AdminTermsList from "./views/AdminTermsList.vue";
 import AdminUsersList from "./views/AdminUsersList.vue";
 import AdminCoursesList from "./views/AdminCoursesList.vue";
+import ScheduleView from "./views/ScheduleView.vue";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -40,6 +41,11 @@ const router = createRouter({
       path: "/admin/courses",
       name: "adminCourses",
       component: AdminCoursesList,
+    },
+    {
+      path: "/schedule",
+      name: "schedule",
+      component: ScheduleView,
     },
   ],
 });
