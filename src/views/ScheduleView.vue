@@ -131,7 +131,7 @@ const loadMeetingTimes = async () => {
     const allMeetingTimes = [];
     for (const course of filteredCourses) {
       try {
-        const response = await MeetingTimeServices.getMeetingTimeByCourseId(
+        const response = await MeetingTimeServices.getMeetingTimeBySectionId(
           course.id
         );
         if (response.data && Array.isArray(response.data)) {
@@ -153,18 +153,18 @@ const loadMeetingTimes = async () => {
           // Skip if course doesn't match any selected prefix
           if (!prefixIndex) continue;
 
-          // Backend includes course data, but merge with our course to ensure user info is included
+          // Backend includes section data, but merge with our course to ensure user info is included
           response.data.forEach((mt) => {
-            // Merge course data - prioritize user info from our course object
-            const mergedCourse = {
-              ...(mt.course || {}),
+            // Merge section data - prioritize user info from our course object
+            const mergedSection = {
+              ...(mt.section || {}),
               ...course,
               // Ensure user info is included from the course we fetched
-              user: course.user || mt.course?.user,
+              user: course.user || mt.section?.user,
             };
             allMeetingTimes.push({
               ...mt,
-              course: mergedCourse,
+              section: mergedSection,
               prefixIndex: prefixIndex,
             });
           });
@@ -252,6 +252,12 @@ const timeSlots = computed(() => {
     }
   }
   return slots;
+});
+
+// Computed property to determine if prefixes can be selected
+// User selection is optional - prefixes are available when term is selected and courses are loaded
+const prefixesEnabled = computed(() => {
+  return selectedTerm.value && uniquePrefixes.value.length > 0;
 });
 
 // Helper function to format hour for display
@@ -342,7 +348,7 @@ onMounted(() => {
                 v-model="coursePrefix1"
                 :items="uniquePrefixes"
                 label="Course Prefix 1 (first 4 characters)"
-                :disabled="!selectedTerm || uniquePrefixes.length === 0"
+                :disabled="!prefixesEnabled"
                 clearable
               ></v-select>
             </v-col>
@@ -351,7 +357,7 @@ onMounted(() => {
                 v-model="coursePrefix2"
                 :items="uniquePrefixes"
                 label="Course Prefix 2 (first 4 characters)"
-                :disabled="!selectedTerm || uniquePrefixes.length === 0"
+                :disabled="!prefixesEnabled"
                 clearable
               ></v-select>
             </v-col>
@@ -435,11 +441,52 @@ onMounted(() => {
                         borderRadius: '4px',
                         fontSize: '12px',
                         lineHeight: '1.3',
+                        position: 'relative',
                       }"
                     >
-                      <div class="font-weight-bold">
-                        {{ mt.course?.courseNumber }}-{{
-                          mt.course?.courseSection
+                      <v-tooltip location="top" max-width="300">
+                        <template v-slot:activator="{ props }">
+                          <v-icon
+                            v-bind="props"
+                            size="12"
+                            color="grey-darken-1"
+                            style="position: absolute; top: 2px; left: 2px; cursor: help;"
+                          >
+                            mdi-information
+                          </v-icon>
+                        </template>
+                        <div style="font-size: 12px; line-height: 1.6">
+                          <div><strong>Course:</strong> {{ mt.section?.courseNumber }}-{{ mt.section?.courseSection }}</div>
+                          <div v-if="mt.section?.courseDescription">
+                            <strong>Description:</strong> {{ mt.section.courseDescription }}
+                          </div>
+                          <div v-if="mt.section?.user">
+                            <strong>Instructor:</strong> {{ mt.section.user.fName }} {{ mt.section.user.lName }}
+                          </div>
+                          <div v-if="mt.section?.user?.email">
+                            <strong>Email:</strong> {{ mt.section.user.email }}
+                          </div>
+                          <div v-if="mt.section?.term">
+                            <strong>Term:</strong> {{ mt.section.term.termName }}
+                          </div>
+                          <div>
+                            <strong>Time:</strong> {{ formatTime(mt.startTime) }}-{{ formatTime(mt.endTime) }}
+                          </div>
+                          <div>
+                            <strong>Days:</strong>
+                            <span v-if="mt.monday"> Mon</span>
+                            <span v-if="mt.tuesday"> Tue</span>
+                            <span v-if="mt.wednesday"> Wed</span>
+                            <span v-if="mt.thursday"> Thu</span>
+                            <span v-if="mt.friday"> Fri</span>
+                            <span v-if="mt.saturday"> Sat</span>
+                            <span v-if="mt.sunday"> Sun</span>
+                          </div>
+                        </div>
+                      </v-tooltip>
+                      <div class="font-weight-bold" style="padding-left: 16px;">
+                        {{ mt.section?.courseNumber }}-{{
+                          mt.section?.courseSection
                         }}
                       </div>
                       <div class="text-caption" style="font-size: 10px;">
@@ -448,11 +495,11 @@ onMounted(() => {
                         }}
                       </div>
                       <div
-                        v-if="mt.course?.user?.lName"
+                        v-if="mt.section?.user?.lName"
                         class="text-caption mt-1"
                         style="font-size: 10px; font-weight: 500;"
                       >
-                        {{ mt.course.user.lName }}
+                        {{ mt.section.user.lName }}
                       </div>
                     </div>
                   </td>

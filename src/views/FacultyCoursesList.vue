@@ -332,7 +332,62 @@ onMounted(() => {
           </thead>
           <tbody>
             <tr v-for="course in courses" :key="course.id">
-              <td>{{ course.courseNumber }}</td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 4px">
+                  {{ course.courseNumber }}
+                  <v-tooltip location="top" max-width="300">
+                    <template v-slot:activator="{ props }">
+                      <v-icon
+                        v-bind="props"
+                        size="16"
+                        color="grey-darken-1"
+                        style="cursor: help"
+                      >
+                        mdi-information
+                      </v-icon>
+                    </template>
+                    <div style="font-size: 12px; line-height: 1.6">
+                      <div>
+                        <strong>Course:</strong> {{ course.courseNumber }}-{{
+                          course.courseSection
+                        }}
+                      </div>
+                      <div v-if="course.courseDescription">
+                        <strong>Description:</strong>
+                        {{ course.courseDescription }}
+                      </div>
+                      <div v-if="course.user">
+                        <strong>Instructor:</strong> {{ course.user.fName }}
+                        {{ course.user.lName }}
+                      </div>
+                      <div v-if="course.user?.email">
+                        <strong>Email:</strong> {{ course.user.email }}
+                      </div>
+                      <div v-if="course.term">
+                        <strong>Term:</strong> {{ course.term.termName }}
+                      </div>
+                      <div v-if="course.term?.startDate">
+                        <strong>Start Date:</strong> {{ course.term.startDate }}
+                      </div>
+                      <div v-if="course.assignedCourse">
+                        <strong>Assigned To:</strong>
+                        {{
+                          course.assignedCourse.assignedSection?.courseNumber
+                        }}-{{
+                          course.assignedCourse.assignedSection?.courseSection
+                        }}
+                        <span
+                          v-if="course.assignedCourse.assignedSection?.term"
+                        >
+                          ({{
+                            course.assignedCourse.assignedSection.term.termName
+                          }})</span
+                        >
+                      </div>
+                    </div>
+                  </v-tooltip>
+                </div>
+              </td>
               <td>{{ course.courseSection }}</td>
               <td>{{ course.courseDescription }}</td>
               <td>
