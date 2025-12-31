@@ -71,6 +71,9 @@ onMounted(() => {
         <v-btn class="mx-2" :to="{ name: 'schedule' }">
           Schedule
         </v-btn>
+        <v-btn class="mx-2" :to="{ name: 'semesterPlan' }">
+          Semester Plan
+        </v-btn>
         <v-btn
           v-if="user.isAdmin"
           class="mx-2"

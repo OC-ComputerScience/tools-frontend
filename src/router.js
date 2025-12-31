@@ -7,6 +7,7 @@ import AdminTermsList from "./views/AdminTermsList.vue";
 import AdminUsersList from "./views/AdminUsersList.vue";
 import AdminCoursesList from "./views/AdminCoursesList.vue";
 import ScheduleView from "./views/ScheduleView.vue";
+import SemesterPlanView from "./views/SemesterPlanView.vue";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -46,6 +47,11 @@ const router = createRouter({
       path: "/schedule",
       name: "schedule",
       component: ScheduleView,
+    },
+    {
+      path: "/semester-plan",
+      name: "semesterPlan",
+      component: SemesterPlanView,
     },
   ],
 });
