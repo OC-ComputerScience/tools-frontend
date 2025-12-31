@@ -3,9 +3,12 @@ import { createRouter, createWebHistory } from "vue-router";
 import Login from "./views/Login.vue";
 import FacultyCoursesList from "./views/FacultyCoursesList.vue";
 import AdminDashboard from "./views/AdminDashboard.vue";
+import AdminImport from "./views/AdminImport.vue";
 import AdminTermsList from "./views/AdminTermsList.vue";
 import AdminUsersList from "./views/AdminUsersList.vue";
 import AdminCoursesList from "./views/AdminCoursesList.vue";
+import AdminRolesList from "./views/AdminRolesList.vue";
+import AdminMenuOptionsList from "./views/AdminMenuOptionsList.vue";
 import ScheduleView from "./views/ScheduleView.vue";
 import SemesterPlanView from "./views/SemesterPlanView.vue";
 
@@ -29,6 +32,11 @@ const router = createRouter({
       component: AdminDashboard,
     },
     {
+      path: "/admin/import",
+      name: "adminImport",
+      component: AdminImport,
+    },
+    {
       path: "/admin/terms",
       name: "adminTerms",
       component: AdminTermsList,
@@ -42,6 +50,16 @@ const router = createRouter({
       path: "/admin/courses",
       name: "adminCourses",
       component: AdminCoursesList,
+    },
+    {
+      path: "/admin/roles",
+      name: "adminRoles",
+      component: AdminRolesList,
+    },
+    {
+      path: "/admin/menu-options",
+      name: "adminMenuOptions",
+      component: AdminMenuOptionsList,
     },
     {
       path: "/schedule",
