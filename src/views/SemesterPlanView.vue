@@ -312,6 +312,7 @@ const formatTime = (time) => {
 };
 
 // Generate time slots (8 AM to 10 PM, in 30-minute increments)
+// Only include slots that have meeting times
 const timeSlots = computed(() => {
   const slots = [];
   for (let hour = 8; hour <= 22; hour++) {
@@ -320,7 +321,14 @@ const timeSlots = computed(() => {
       slots.push({ hour, minute: 30, display: formatHour(hour, 30) });
     }
   }
-  return slots;
+  
+  // Filter to only include slots that have at least one meeting time in any day
+  return slots.filter((slot) => {
+    return daysOfWeek.some((day) => {
+      const meetingsForSlot = getMeetingTimesForSlot(day.key, slot);
+      return meetingsForSlot.length > 0;
+    });
+  });
 });
 
 // Helper function to format hour for display
@@ -383,6 +391,70 @@ const getHiddenSections = computed(() => {
       courseSection: s.courseSection,
       courseDescription: s.courseDescription,
     }));
+});
+
+// Helper function to get unmatched courses (courses in plan without matching sections)
+const getUnmatchedCourses = computed(() => {
+  if (!selectedTerm.value || courses.value.length === 0 || sections.value.length === 0) {
+    return [];
+  }
+
+  // Build course number formats for semester plan courses (same logic as in loadSections)
+  const courseNumbers = courses.value.map((c) => {
+    const code = (c.code || '').toUpperCase().trim();
+    const number = (c.number || '').trim();
+    return {
+      course: c,
+      full: `${code}${number}`,           // "CSCI101"
+      withSpace: `${code} ${number}`,      // "CSCI 101"
+      numberOnly: number,                  // "101"
+      codeOnly: code,                      // "CSCI"
+    };
+  });
+
+  // Check which courses have matching sections
+  const unmatched = courseNumbers.filter((cn) => {
+    const sectionMatches = sections.value.some((section) => {
+      if (!section.courseNumber) return false;
+      
+      const sectionNum = (section.courseNumber || '').toUpperCase().trim().replace(/\s+/g, '');
+      
+      // Normalize all formats by removing spaces for comparison
+      const fullNum = cn.full.toUpperCase().replace(/\s+/g, '');
+      const withSpaceNum = cn.withSpace.toUpperCase().replace(/\s+/g, '');
+      const numberOnlyNum = cn.numberOnly.toUpperCase().trim();
+      
+      // Direct match (normalized)
+      if (sectionNum === fullNum || sectionNum === withSpaceNum) return true;
+      
+      // Match by course number only
+      if (numberOnlyNum && sectionNum.endsWith(numberOnlyNum)) {
+        const sectionPrefix = sectionNum.substring(0, sectionNum.length - numberOnlyNum.length);
+        if (sectionPrefix === cn.codeOnly || sectionPrefix === '') {
+          return true;
+        }
+      }
+      
+      // Match if section number contains the full course number (normalized)
+      if (sectionNum.includes(fullNum) || fullNum.includes(sectionNum)) return true;
+      
+      // Match if section number contains the course number part
+      if (numberOnlyNum && sectionNum.includes(numberOnlyNum)) {
+        if (sectionNum.startsWith(cn.codeOnly)) return true;
+      }
+      
+      return false;
+    });
+
+    return !sectionMatches; // Return courses that don't have matches
+  });
+
+  return unmatched.map((cn) => ({
+    code: cn.course.code,
+    number: cn.course.number,
+    description: cn.course.description,
+    displayName: `${cn.course.code}${cn.course.number}`,
+  }));
 });
 
 // Helper function to get meeting times for a specific day and time slot
@@ -462,6 +534,29 @@ onMounted(() => {
       </v-card>
 
       <br />
+
+      <!-- Unmatched Courses List (courses in plan without matching sections) -->
+      <v-card
+        v-if="selectedMajor && selectedSemester && selectedTerm && getUnmatchedCourses.length > 0"
+        class="mb-4"
+      >
+        <v-card-title>Courses in Plan Without Matching Sections</v-card-title>
+        <v-card-text>
+          <div class="d-flex flex-wrap gap-2">
+            <v-chip
+              v-for="(course, index) in getUnmatchedCourses"
+              :key="`unmatched-${index}`"
+              color="orange"
+              variant="outlined"
+            >
+              {{ course.displayName }}
+              <span v-if="course.description" class="ml-1 text-caption">
+                ({{ course.description }})
+              </span>
+            </v-chip>
+          </div>
+        </v-card-text>
+      </v-card>
 
       <!-- Hidden Courses List -->
       <v-card
