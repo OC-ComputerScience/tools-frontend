@@ -72,24 +72,14 @@ const saveMenuOption = () => {
         message.value = e.response?.data?.message || "Error updating menu option";
       });
   } else {
-    // For create, we don't need roleIds in the initial create, handle separately if needed
+    // For create, include roleIds in the create request
     const createData = {
       option: menuOptionFields.option,
       routeName: menuOptionFields.routeName,
+      roleIds: selectedRoleIds.value,
     };
     
     MenuOptionServices.createMenuOption(createData)
-      .then((response) => {
-        // If roles are selected, update the newly created menu option with roles
-        if (selectedRoleIds.value.length > 0 && response.data.id) {
-          const updateWithRoles = {
-            ...createData,
-            roleIds: selectedRoleIds.value,
-          };
-          return MenuOptionServices.updateMenuOption(response.data.id, updateWithRoles);
-        }
-        return Promise.resolve(response);
-      })
       .then(() => {
         message.value = "Menu option created successfully";
         closeDialog();

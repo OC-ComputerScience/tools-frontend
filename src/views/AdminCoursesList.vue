@@ -1,12 +1,20 @@
 <script setup>
 import SectionServices from "../services/sectionServices";
 import TermServices from "../services/termServices";
+import AssignedCourseServices from "../services/assignedCourseServices";
+import UserServices from "../services/userServices";
 import { ref, onMounted } from "vue";
 
 const courses = ref([]);
 const terms = ref([]);
+const users = ref([]);
 const selectedTerm = ref(null);
+const selectedFaculty = ref(null);
 const message = ref("Select a term to view courses");
+const totalSections = ref(0);
+const totalAssignments = ref(0);
+const facultyWithNoAssignments = ref(0);
+const facultyWithAssignments = ref(0);
 
 const retrieveTerms = () => {
   TermServices.getAllTerms()
@@ -22,13 +30,167 @@ const retrieveTerms = () => {
     });
 };
 
-const retrieveCourses = () => {
+const retrieveUsers = () => {
+  UserServices.getAllUsers()
+    .then((response) => {
+      // Add fullName property for display
+      users.value = response.data.map((user) => ({
+        ...user,
+        fullName: `${user.fName} ${user.lName}`,
+      }));
+    })
+    .catch((e) => {
+      console.error("Error loading users:", e);
+    });
+};
+
+const exportAssignedCourses = async () => {
   if (!selectedTerm.value) {
-    courses.value = [];
+    alert("Please select a term first");
     return;
   }
 
-  SectionServices.getSectionsWithCount({ termId: selectedTerm.value })
+  try {
+    // Get the selected term details
+    const selectedTermData = terms.value.find(t => t.id === selectedTerm.value);
+    if (!selectedTermData) {
+      alert("Term not found");
+      return;
+    }
+
+    // Get all sections for the selected term with their term info
+    const sectionsResponse = await SectionServices.getAllSections({ termId: selectedTerm.value });
+    const sections = sectionsResponse.data || [];
+    const sectionIds = sections.map(s => s.id);
+
+    if (sectionIds.length === 0) {
+      alert("No sections found for the selected term");
+      return;
+    }
+
+    // Create a map of section ID to section data for quick lookup
+    const sectionMap = new Map();
+    sections.forEach(s => {
+      sectionMap.set(s.id, s);
+    });
+
+    // Get all assigned courses (basic info)
+    const allAssignedCoursesResponse = await AssignedCourseServices.getAllAssignedCourses({});
+    const allAssignedCourses = allAssignedCoursesResponse.data || [];
+    
+    // Filter to only assigned courses for sections in the selected term
+    const termAssignedCourses = allAssignedCourses.filter(ac => sectionIds.includes(ac.sectionId));
+
+    if (termAssignedCourses.length === 0) {
+      alert("No assigned courses found for the selected term");
+      return;
+    }
+
+    // Get unique assigned section IDs to fetch their details with term info
+    const assignedSectionIds = [...new Set(termAssignedCourses.map(ac => ac.assignedSectionId))];
+    
+    // Fetch all assigned sections with their term info
+    const assignedSectionsResponses = await Promise.all(
+      assignedSectionIds.map(id => SectionServices.getSection(id))
+    );
+    
+    // Create a map of assigned section ID to section data with term
+    const assignedSectionMap = new Map();
+    assignedSectionsResponses.forEach(response => {
+      if (response.data) {
+        assignedSectionMap.set(response.data.id, response.data);
+      }
+    });
+
+    // Build CSV data
+    const csvRows = [];
+    
+    // CSV Header
+    csvRows.push(['course_id', 'export_filename', 'term_id', 'short_name', 'long_name', 'accountId'].join(','));
+
+    // CSV Data rows
+    termAssignedCourses.forEach((assignedCourse) => {
+      // Get the original section
+      const section = sectionMap.get(assignedCourse.sectionId);
+      if (!section) return;
+
+      // Get the assigned section with term info
+      const assignedSection = assignedSectionMap.get(assignedCourse.assignedSectionId);
+      if (!assignedSection) return;
+
+      const sectionTerm = section.term || selectedTermData;
+      const assignedSectionTerm = assignedSection.term || { termName: '' };
+
+      // course_id: <term name>_<course number>_<section number>
+      const courseId = `${sectionTerm.termName}_${section.courseNumber}_${section.courseSection}`;
+
+      // export_filename: ArchiveFile_<assigned course term name>_<assigned course number>-<assigned course section number>.zip
+      const exportFilename = `ArchiveFile_${assignedSectionTerm.termName}_${assignedSection.courseNumber}-${assignedSection.courseSection}.zip`;
+
+      // term_id: <term name>
+      const termId = sectionTerm.termName;
+
+      // short_name: <course number>-<section number>
+      const shortName = `${section.courseNumber}-${section.courseSection}`;
+
+      // long_name: <course description>
+      const longName = section.courseDescription || '';
+
+      // Escape commas and quotes in CSV values
+      const escapeCsvValue = (value) => {
+        if (value === null || value === undefined) return '';
+        const stringValue = String(value);
+        if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+          return `"${stringValue.replace(/"/g, '""')}"`;
+        }
+        return stringValue;
+      };
+
+      csvRows.push([
+        escapeCsvValue(courseId),
+        escapeCsvValue(exportFilename),
+        escapeCsvValue(termId),
+        escapeCsvValue(shortName),
+        escapeCsvValue(longName),
+        escapeCsvValue(section.accountId || '')
+      ].join(','));
+    });
+
+    // Create CSV content
+    const csvContent = csvRows.join('\n');
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `canvas_migration_${selectedTermData.termName}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (error) {
+    console.error('Error exporting assigned courses:', error);
+    alert('Error exporting assigned courses. Please check the console for details.');
+  }
+};
+
+const retrieveCourses = () => {
+  if (!selectedTerm.value) {
+    courses.value = [];
+    totalSections.value = 0;
+    totalAssignments.value = 0;
+    facultyWithNoAssignments.value = 0;
+    facultyWithAssignments.value = 0;
+    return;
+  }
+
+  const params = { termId: selectedTerm.value };
+  if (selectedFaculty.value) {
+    params.userId = selectedFaculty.value;
+  }
+
+  SectionServices.getSectionsWithCount(params)
     .then((response) => {
       courses.value = response.data.sort((a, b) => {
         // Sort by courseNumber first, then by courseSection in ascending order
@@ -49,14 +211,88 @@ const retrieveCourses = () => {
           sensitivity: "base",
         });
       });
+      calculateStats();
     })
     .catch((e) => {
       message.value = e.response?.data?.message || "Error loading courses";
     });
 };
 
+const calculateStats = async () => {
+  if (!selectedTerm.value) {
+    totalSections.value = 0;
+    totalAssignments.value = 0;
+    facultyWithNoAssignments.value = 0;
+    facultyWithAssignments.value = 0;
+    return;
+  }
+
+  try {
+    // Build params for sections query based on selected filters
+    const sectionParams = { termId: selectedTerm.value };
+    if (selectedFaculty.value) {
+      sectionParams.userId = selectedFaculty.value;
+    }
+
+    // Get sections for the selected term (and faculty if selected)
+    const sectionsResponse = await SectionServices.getAllSections(sectionParams);
+    const allSections = sectionsResponse.data || [];
+    totalSections.value = allSections.length;
+
+    // Get all assignments for sections in this term
+    const assignedCoursesResponse = await AssignedCourseServices.getAllAssignedCourses({});
+    const allAssignments = assignedCoursesResponse.data || [];
+    
+    // Filter assignments to only those for sections in the filtered list
+    const sectionIds = allSections.map(s => s.id);
+    const termAssignments = allAssignments.filter(ac => sectionIds.includes(ac.sectionId));
+    totalAssignments.value = termAssignments.length;
+
+    // Calculate faculty with assignments and faculty with no assignments
+    if (selectedFaculty.value) {
+      // For a single faculty, check if they have any assignments
+      const sectionIdsWithAssignments = [...new Set(termAssignments.map(ac => ac.sectionId))];
+      const hasAssignments = allSections.some(s => sectionIdsWithAssignments.includes(s.id));
+      facultyWithAssignments.value = hasAssignments ? 1 : 0;
+      facultyWithNoAssignments.value = hasAssignments ? 0 : 1;
+    } else {
+      // Get all sections for the term (without faculty filter) to calculate this stat
+      const allTermSectionsResponse = await SectionServices.getAllSections({ termId: selectedTerm.value });
+      const allTermSections = allTermSectionsResponse.data || [];
+      
+      // Get unique faculty IDs from all sections in the term
+      const facultyIds = [...new Set(allTermSections.map(s => s.userId))];
+      
+      // Get section IDs that have assignments
+      const allSectionIds = allTermSections.map(s => s.id);
+      const allTermAssignments = allAssignments.filter(ac => allSectionIds.includes(ac.sectionId));
+      const sectionIdsWithAssignments = [...new Set(allTermAssignments.map(ac => ac.sectionId))];
+      
+      // Find faculty who have at least one section with assignments
+      const facultyWithAssignmentsSet = new Set(
+        allTermSections
+          .filter(s => sectionIdsWithAssignments.includes(s.id))
+          .map(s => s.userId)
+      );
+      
+      // Faculty with assignments = count of unique faculty who have at least one assignment
+      facultyWithAssignments.value = facultyWithAssignmentsSet.size;
+      
+      // Faculty with no assignments = total faculty - faculty with assignments
+      facultyWithNoAssignments.value = facultyIds.length - facultyWithAssignmentsSet.size;
+    }
+  } catch (error) {
+    console.error("Error calculating stats:", error);
+    totalSections.value = 0;
+    totalAssignments.value = 0;
+    facultyWithNoAssignments.value = 0;
+    facultyWithAssignments.value = 0;
+  }
+};
+
 onMounted(() => {
   retrieveTerms();
+  retrieveUsers();
 });
 </script>
 
@@ -64,28 +300,89 @@ onMounted(() => {
   <div>
     <v-container>
       <v-toolbar>
-        <v-toolbar-title>Manage Courses</v-toolbar-title>
+        <v-toolbar-title>Course Migration</v-toolbar-title>
       </v-toolbar>
       <br />
 
       <v-card>
-        <v-card-title>Select Term</v-card-title>
+        <v-card-title>Select Term and Faculty</v-card-title>
         <v-card-text>
-          <v-select
-            v-model="selectedTerm"
-            :items="terms"
-            item-title="termName"
-            item-value="id"
-            label="Term"
-            @update:model-value="retrieveCourses"
-          ></v-select>
+          <v-row>
+            <v-col cols="12" md="6">
+              <v-select
+                v-model="selectedTerm"
+                :items="terms"
+                item-title="termName"
+                item-value="id"
+                label="Term"
+                @update:model-value="retrieveCourses"
+              ></v-select>
+            </v-col>
+            <v-col cols="12" md="6">
+              <v-select
+                v-model="selectedFaculty"
+                :items="users"
+                item-title="fullName"
+                item-value="id"
+                label="Faculty (optional)"
+                clearable
+                @update:model-value="retrieveCourses"
+              ></v-select>
+            </v-col>
+          </v-row>
         </v-card-text>
       </v-card>
 
       <br />
 
+      <v-row v-if="selectedTerm">
+        <v-col cols="12" md="3">
+          <v-card>
+            <v-card-title>Total Sections</v-card-title>
+            <v-card-text>
+              <h2>{{ totalSections }}</h2>
+            </v-card-text>
+          </v-card>
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-card>
+            <v-card-title>Total Assignments</v-card-title>
+            <v-card-text>
+              <h2>{{ totalAssignments }}</h2>
+            </v-card-text>
+          </v-card>
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-card>
+            <v-card-title>Faculty with Assignments</v-card-title>
+            <v-card-text>
+              <h2>{{ facultyWithAssignments }}</h2>
+            </v-card-text>
+          </v-card>
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-card>
+            <v-card-title>Faculty with No Assignments</v-card-title>
+            <v-card-text>
+              <h2>{{ facultyWithNoAssignments }}</h2>
+            </v-card-text>
+          </v-card>
+        </v-col>
+      </v-row>
+
+      <br v-if="selectedTerm" />
+
       <v-card v-if="selectedTerm">
-        <v-card-title>Courses for Selected Term</v-card-title>
+        <v-card-title>
+          <span>Courses for Selected Term</span>
+          <v-spacer></v-spacer>
+          <v-btn
+            color="primary"
+            @click="exportAssignedCourses"
+          >
+            Export Assigned Courses
+          </v-btn>
+        </v-card-title>
         <v-card-text>
           <b>{{ message }}</b>
         </v-card-text>
