@@ -32,6 +32,6 @@ jobs:
           local: dist/
           remote: c:/Apache24/htdocs/tools
           recursive: true
-          host: "toolsdev.oc.edu"
+          host: "flightplandev.oc.edu"
           username: "david.north"
           privateKey: ${{ secrets.DEV_WIN_SERVER_SSH_KEY  }}
