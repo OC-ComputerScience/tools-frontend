@@ -38,12 +38,8 @@ const handleCredentialResponse = async (response) => {
       fName.value = user.value.fName;
       lName.value = user.value.lName;
       
-      // Redirect based on user role
-      if (user.value.isAdmin) {
-        router.push({ name: "adminDashboard" });
-      } else {
-        router.push({ name: "facultyCourses" });
-      }
+      // Redirect to dashboard
+      router.push({ name: "dashboard" });
     })
     .catch((error) => {
       console.log("error", error);

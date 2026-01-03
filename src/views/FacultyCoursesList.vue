@@ -276,7 +276,7 @@ onMounted(() => {
   <div>
     <v-container>
       <v-toolbar>
-        <v-toolbar-title>My Courses</v-toolbar-title>
+        <v-toolbar-title>Import Courses</v-toolbar-title>
       </v-toolbar>
       <br />
 
