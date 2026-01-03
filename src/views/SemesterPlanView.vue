@@ -393,9 +393,44 @@ const getHiddenSections = computed(() => {
     }));
 });
 
+// Helper function to check if a section matches a course number
+const sectionMatchesCourse = (section, courseNum) => {
+  if (!section.courseNumber) return false;
+  
+  const sectionNum = (section.courseNumber || '').toUpperCase().trim().replace(/\s+/g, '');
+  const code = (courseNum.codeOnly || '').toUpperCase().trim();
+  const number = (courseNum.numberOnly || '').toUpperCase().trim();
+  
+  // Normalize all formats by removing spaces for comparison
+  const fullNum = courseNum.full.toUpperCase().replace(/\s+/g, '');
+  const withSpaceNum = courseNum.withSpace.toUpperCase().replace(/\s+/g, '');
+  const numberOnlyNum = number;
+  
+  // Direct match (normalized)
+  if (sectionNum === fullNum || sectionNum === withSpaceNum) return true;
+  
+  // Match by course number only
+  if (numberOnlyNum && sectionNum.endsWith(numberOnlyNum)) {
+    const sectionPrefix = sectionNum.substring(0, sectionNum.length - numberOnlyNum.length);
+    if (sectionPrefix === code || sectionPrefix === '') {
+      return true;
+    }
+  }
+  
+  // Match if section number contains the full course number (normalized)
+  if (sectionNum.includes(fullNum) || fullNum.includes(sectionNum)) return true;
+  
+  // Match if section number contains the course number part
+  if (numberOnlyNum && sectionNum.includes(numberOnlyNum)) {
+    if (sectionNum.startsWith(code)) return true;
+  }
+  
+  return false;
+};
+
 // Helper function to get unmatched courses (courses in plan without matching sections)
 const getUnmatchedCourses = computed(() => {
-  if (!selectedTerm.value || courses.value.length === 0 || sections.value.length === 0) {
+  if (!selectedTerm.value || courses.value.length === 0) {
     return [];
   }
 
@@ -415,41 +450,90 @@ const getUnmatchedCourses = computed(() => {
   // Check which courses have matching sections
   const unmatched = courseNumbers.filter((cn) => {
     const sectionMatches = sections.value.some((section) => {
-      if (!section.courseNumber) return false;
-      
-      const sectionNum = (section.courseNumber || '').toUpperCase().trim().replace(/\s+/g, '');
-      
-      // Normalize all formats by removing spaces for comparison
-      const fullNum = cn.full.toUpperCase().replace(/\s+/g, '');
-      const withSpaceNum = cn.withSpace.toUpperCase().replace(/\s+/g, '');
-      const numberOnlyNum = cn.numberOnly.toUpperCase().trim();
-      
-      // Direct match (normalized)
-      if (sectionNum === fullNum || sectionNum === withSpaceNum) return true;
-      
-      // Match by course number only
-      if (numberOnlyNum && sectionNum.endsWith(numberOnlyNum)) {
-        const sectionPrefix = sectionNum.substring(0, sectionNum.length - numberOnlyNum.length);
-        if (sectionPrefix === cn.codeOnly || sectionPrefix === '') {
-          return true;
-        }
-      }
-      
-      // Match if section number contains the full course number (normalized)
-      if (sectionNum.includes(fullNum) || fullNum.includes(sectionNum)) return true;
-      
-      // Match if section number contains the course number part
-      if (numberOnlyNum && sectionNum.includes(numberOnlyNum)) {
-        if (sectionNum.startsWith(cn.codeOnly)) return true;
-      }
-      
-      return false;
+      return sectionMatchesCourse(section, cn);
     });
 
     return !sectionMatches; // Return courses that don't have matches
   });
 
   return unmatched.map((cn) => ({
+    code: cn.course.code,
+    number: cn.course.number,
+    description: cn.course.description,
+    displayName: `${cn.course.code}${cn.course.number}`,
+  }));
+});
+
+// Helper function to get courses in plan that are not displayed in the schedule
+// This includes courses without matching sections AND courses with sections that aren't visible
+const getCoursesNotInSchedule = computed(() => {
+  if (!selectedTerm.value || courses.value.length === 0) {
+    return [];
+  }
+
+  // Build course number formats for semester plan courses
+  const courseNumbers = courses.value.map((c) => {
+    const code = (c.code || '').toUpperCase().trim();
+    const number = (c.number || '').trim();
+    return {
+      course: c,
+      full: `${code}${number}`,
+      withSpace: `${code} ${number}`,
+      numberOnly: number,
+      codeOnly: code,
+    };
+  });
+
+  // Find courses that are not displayed in the schedule
+  const notDisplayed = courseNumbers.filter((cn) => {
+    // Get all sections that match this course
+    const matchingSections = sections.value.filter((section) => {
+      return sectionMatchesCourse(section, cn);
+    });
+
+    // If no matching sections, include it (course is not in schedule)
+    if (matchingSections.length === 0) {
+      return true;
+    }
+
+    // Check if any of the matching sections are visible in the schedule
+    // A section is visible if:
+    // 1. It's not hidden
+    // 2. It passes the hide100AndAbove filter (if enabled)
+    // 3. It has meeting times in the meetingTimes array (meetingTimes might be empty if not loaded yet)
+    const hasVisibleSection = matchingSections.some((section) => {
+      // Check if section is hidden
+      if (hiddenSectionIds.value.has(section.id)) {
+        return false;
+      }
+
+      // Check if section is filtered out by hide100AndAbove
+      if (hide100AndAbove.value) {
+        const sectionNum = getSectionNumberValue(section.courseSection);
+        if (sectionNum >= 100) {
+          return false;
+        }
+      }
+
+      // Check if section has meeting times
+      // Only consider a section visible if meeting times have been loaded AND the section has meeting times
+      // If meetingTimes is still empty (not loaded yet), don't consider the section visible yet
+      if (meetingTimes.value.length === 0) {
+        return false; // Meeting times not loaded yet, can't determine visibility
+      }
+      
+      const hasMeetingTimes = meetingTimes.value.some((mt) => {
+        return mt.section?.id === section.id;
+      });
+
+      return hasMeetingTimes;
+    });
+
+    // Return courses where no sections are visible
+    return !hasVisibleSection;
+  });
+
+  return notDisplayed.map((cn) => ({
     code: cn.course.code,
     number: cn.course.number,
     description: cn.course.description,
@@ -535,18 +619,18 @@ onMounted(() => {
 
       <br />
 
-      <!-- Unmatched Courses List (courses in plan without matching sections) -->
+      <!-- Courses Not in Schedule List -->
       <v-card
-        v-if="selectedMajor && selectedSemester && selectedTerm && getUnmatchedCourses.length > 0"
+        v-if="selectedMajor && selectedSemester && selectedTerm && getCoursesNotInSchedule.length > 0"
         class="mb-4"
       >
-        <v-card-title>Courses in Plan Without Matching Sections</v-card-title>
+        <v-card-title>Courses Not in Schedule</v-card-title>
         <v-card-text>
           <div class="d-flex flex-wrap gap-2">
             <v-chip
-              v-for="(course, index) in getUnmatchedCourses"
-              :key="`unmatched-${index}`"
-              color="orange"
+              v-for="(course, index) in getCoursesNotInSchedule"
+              :key="`not-in-schedule-${index}`"
+              color="grey"
               variant="outlined"
             >
               {{ course.displayName }}

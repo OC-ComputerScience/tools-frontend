@@ -27,9 +27,14 @@ const router = createRouter({
       component: FacultyCoursesList,
     },
     {
+      path: "/dashboard",
+      name: "dashboard",
+      component: AdminDashboard,
+    },
+    {
       path: "/admin",
       name: "adminDashboard",
-      component: AdminDashboard,
+      redirect: { name: "dashboard" },
     },
     {
       path: "/admin/import",

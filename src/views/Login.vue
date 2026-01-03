@@ -5,11 +5,10 @@ import SocialLogin from "../components/SocialLogin.vue";
 <template>
   <v-container>
     <v-toolbar>
-      <v-toolbar-title>Welcome to Course Import!</v-toolbar-title>
+      <v-toolbar-title>Welcome to Tools!</v-toolbar-title>
     </v-toolbar>
     <br /><br />
     <SocialLogin />
     <br /><br />
   </v-container>
 </template>
-

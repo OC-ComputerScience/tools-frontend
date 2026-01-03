@@ -93,8 +93,7 @@ const accessibleMenuOptions = computed(() => {
 // Get default route based on user
 const defaultRoute = computed(() => {
   if (!user.value) return { name: "login" };
-  if (user.value.isAdmin) return { name: "adminDashboard" };
-  return { name: "facultyCourses" };
+  return { name: "dashboard" };
 });
 
 const logout = () => {
