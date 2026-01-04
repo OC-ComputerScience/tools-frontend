@@ -1,36 +1,36 @@
 <script setup>
 import SectionServices from "../services/sectionServices";
-import TermServices from "../services/termServices";
+import SemesterServices from "../services/semesterServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
 import Utils from "../config/utils.js";
 import { ref, onMounted, nextTick } from "vue";
 
 const user = Utils.getStore("user");
 const courses = ref([]);
-const terms = ref([]);
-const selectedTerm = ref(null);
-const message = ref("Select a term to view your courses");
+const semesters = ref([]);
+const selectedSemester = ref(null);
+const message = ref("Select a semester to view your courses");
 const assignmentDialogs = ref({});
 
-const retrieveTerms = () => {
-  TermServices.getAllTerms()
+const retrieveSemesters = () => {
+  SemesterServices.getAll()
     .then((response) => {
-      terms.value = response.data;
+      semesters.value = response.data;
     })
     .catch((e) => {
-      message.value = e.response?.data?.message || "Error loading terms";
+      message.value = e.response?.data?.message || "Error loading semesters";
     });
 };
 
 const retrieveCourses = async () => {
-  if (!selectedTerm.value) {
+  if (!selectedSemester.value) {
     courses.value = [];
     return;
   }
 
   try {
     const response = await SectionServices.getSectionsByUserEmail(user.email, {
-      termId: selectedTerm.value,
+      semesterId: selectedSemester.value,
     });
 
     // The backend now includes assignedCourse data in the response
@@ -135,11 +135,11 @@ const loadAssignedCourse = (courseId) => {
     });
 };
 
-// Helper function to check if a term started in the past
-const isTermInPast = (term) => {
-  if (!term || !term.startDate) return false;
+// Helper function to check if a semester started in the past
+const isSemesterInPast = (semester) => {
+  if (!semester || !semester.startDate) return false;
 
-  const startDate = new Date(term.startDate);
+  const startDate = new Date(semester.startDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0); // Reset time to midnight for accurate date comparison
   startDate.setHours(0, 0, 0, 0);
@@ -147,16 +147,18 @@ const isTermInPast = (term) => {
   return startDate < today;
 };
 
-// Helper function to get the term for a course
-const getCourseTerm = (course) => {
-  return course.term || terms.value.find((t) => t.id === course.termId);
+// Helper function to get the semester for a course
+const getCourseSemester = (course) => {
+  return (
+    course.semester || semesters.value.find((s) => s.id === course.semesterId)
+  );
 };
 
 const openAssignmentDialog = async (course) => {
-  // Check if course's term started in the past
-  const courseTerm = getCourseTerm(course);
+  // Check if course's semester started in the past
+  const courseSemester = getCourseSemester(course);
 
-  if (courseTerm && isTermInPast(courseTerm)) {
+  if (courseSemester && isSemesterInPast(courseSemester)) {
     // Auto-assign course to itself
     const assignedCourse = {
       sectionId: course.id,
@@ -176,32 +178,32 @@ const openAssignmentDialog = async (course) => {
 
   // Normal flow - show dialog
   assignmentDialogs.value[course.id] = true;
-  if (!course.availableTerms) {
-    loadAvailableTerms(course);
+  if (!course.availableSemesters) {
+    loadAvailableSemesters(course);
   }
 };
 
-const loadAvailableTerms = (course) => {
-  TermServices.getAllTerms()
+const loadAvailableSemesters = (course) => {
+  SemesterServices.getAll()
     .then((response) => {
-      course.availableTerms = response.data.filter(
-        (t) => t.id !== course.termId
+      course.availableSemesters = response.data.filter(
+        (s) => s.id !== course.semesterId
       );
-      course.selectedTermForAssignment = null;
+      course.selectedSemesterForAssignment = null;
       course.availableCourses = [];
     })
     .catch(() => {
-      course.availableTerms = [];
+      course.availableSemesters = [];
     });
 };
 
-const loadCoursesForTerm = (course, termId) => {
-  if (!termId) {
+const loadCoursesForSemester = (course, semesterId) => {
+  if (!semesterId) {
     course.availableCourses = [];
     return;
   }
 
-  SectionServices.getAllSections({ termId: termId })
+  SectionServices.getAllSections({ semesterId: semesterId })
     .then((response) => {
       // Filter courses to only show those matching the current course's courseNumber
       // Transform items to include a title property for display
@@ -237,11 +239,11 @@ const assignCourse = async (course) => {
     assignmentDialogs.value[course.id] = false;
 
     // Clear selection state
-    course.selectedTermForAssignment = null;
+    course.selectedSemesterForAssignment = null;
     course.selectedCourseForAssignment = null;
     course.availableCourses = [];
 
-    // Reload the courses list for the current term
+    // Reload the courses list for the current semester
     // This will include the newly assigned course data from the backend
     await retrieveCourses();
   } catch (e) {
@@ -259,7 +261,7 @@ const removeAssignment = async (course) => {
     await AssignedCourseServices.deleteAssignedCourseBySectionId(course.id);
     message.value = "Assignment removed successfully";
 
-    // Reload the courses list for the current term
+    // Reload the courses list for the current semester
     // This will refresh the assigned course data from the backend
     await retrieveCourses();
   } catch (e) {
@@ -268,7 +270,7 @@ const removeAssignment = async (course) => {
 };
 
 onMounted(() => {
-  retrieveTerms();
+  retrieveSemesters();
 });
 </script>
 
@@ -292,22 +294,22 @@ onMounted(() => {
           <br />
           <div class="text-body-1">
             If there are courses that you taught in a previous semester that you
-            don't teach in Fall 2026, you can also select the past term and
-            assign the Blackboard course from that term to import into the
+            don't teach in Fall 2026, you can also select the past semester and
+            assign the Blackboard course from that semester to import into the
             Canvas course so the course data is available for the future.
           </div>
         </v-card-text>
       </v-card>
 
       <v-card>
-        <v-card-title>Select Term for Canvas Courses</v-card-title>
+        <v-card-title>Select Semester for Canvas Courses</v-card-title>
         <v-card-text>
           <v-select
-            v-model="selectedTerm"
-            :items="terms"
-            item-title="termName"
+            v-model="selectedSemester"
+            :items="semesters"
+            item-title="name"
             item-value="id"
-            label="Term"
+            label="Semester"
             @update:model-value="retrieveCourses"
           ></v-select>
         </v-card-text>
@@ -315,8 +317,8 @@ onMounted(() => {
 
       <br />
 
-      <v-card v-if="selectedTerm">
-        <v-card-title>Canvas Courses for Selected Term</v-card-title>
+      <v-card v-if="selectedSemester">
+        <v-card-title>Canvas Courses for Selected Semester</v-card-title>
         <v-card-text>
           <b>{{ message }}</b>
         </v-card-text>
@@ -363,11 +365,12 @@ onMounted(() => {
                       <div v-if="course.user?.email">
                         <strong>Email:</strong> {{ course.user.email }}
                       </div>
-                      <div v-if="course.term">
-                        <strong>Term:</strong> {{ course.term.termName }}
+                      <div v-if="course.semester">
+                        <strong>Semester:</strong> {{ course.semester.name }}
                       </div>
-                      <div v-if="course.term?.startDate">
-                        <strong>Start Date:</strong> {{ course.term.startDate }}
+                      <div v-if="course.semester?.startDate">
+                        <strong>Start Date:</strong>
+                        {{ course.semester.startDate }}
                       </div>
                       <div v-if="course.assignedCourse">
                         <strong>Assigned To:</strong>
@@ -377,10 +380,10 @@ onMounted(() => {
                           course.assignedCourse.assignedSection?.courseSection
                         }}
                         <span
-                          v-if="course.assignedCourse.assignedSection?.term"
+                          v-if="course.assignedCourse.assignedSection?.semester"
                         >
                           ({{
-                            course.assignedCourse.assignedSection.term.termName
+                            course.assignedCourse.assignedSection.semester.name
                           }})</span
                         >
                       </div>
@@ -395,7 +398,7 @@ onMounted(() => {
                   {{ course.assignedCourse.assignedSection?.courseNumber }}-{{
                     course.assignedCourse.assignedSection?.courseSection
                   }}
-                  ({{ course.assignedCourse.assignedSection?.term?.termName }})
+                  ({{ course.assignedCourse.assignedSection?.semester?.name }})
                 </span>
                 <span v-else>None</span>
               </td>
@@ -404,7 +407,8 @@ onMounted(() => {
                   small
                   color="primary"
                   :disabled="
-                    course.assignedCourse && isTermInPast(getCourseTerm(course))
+                    course.assignedCourse &&
+                    isSemesterInPast(getCourseSemester(course))
                   "
                   @click="openAssignmentDialog(course)"
                 >
@@ -437,8 +441,8 @@ onMounted(() => {
           <v-card-text>
             <!-- Instruction Text -->
             <div class="mb-4 text-body-2">
-              Select the Blackboard term and course that you want imported into
-              the course below.
+              Select the Blackboard semester and course that you want imported
+              into the course below.
             </div>
 
             <!-- Course Context Information -->
@@ -448,7 +452,7 @@ onMounted(() => {
               </div>
               <div class="text-body-2">
                 <div>
-                  <strong>Semester:</strong> {{ course.term?.termName }}
+                  <strong>Semester:</strong> {{ course.semester?.name }}
                 </div>
                 <div>
                   <strong>Course:</strong> {{ course.courseNumber }}-{{
@@ -461,16 +465,16 @@ onMounted(() => {
             <v-divider class="mb-4"></v-divider>
 
             <v-select
-              v-model="course.selectedTermForAssignment"
-              :items="course.availableTerms || []"
-              item-title="termName"
+              v-model="course.selectedSemesterForAssignment"
+              :items="course.availableSemesters || []"
+              item-title="name"
               item-value="id"
-              label="Select Term"
-              @update:model-value="loadCoursesForTerm(course, $event)"
+              label="Select Semester"
+              @update:model-value="loadCoursesForSemester(course, $event)"
             ></v-select>
 
             <v-select
-              v-if="course.selectedTermForAssignment"
+              v-if="course.selectedSemesterForAssignment"
               v-model="course.selectedCourseForAssignment"
               :items="course.availableCourses || []"
               item-title="title"

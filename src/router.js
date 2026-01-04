@@ -4,13 +4,18 @@ import Login from "./views/Login.vue";
 import FacultyCoursesList from "./views/FacultyCoursesList.vue";
 import AdminDashboard from "./views/AdminDashboard.vue";
 import AdminImport from "./views/AdminImport.vue";
-import AdminTermsList from "./views/AdminTermsList.vue";
 import AdminUsersList from "./views/AdminUsersList.vue";
 import AdminCoursesList from "./views/AdminCoursesList.vue";
 import AdminRolesList from "./views/AdminRolesList.vue";
 import AdminMenuOptionsList from "./views/AdminMenuOptionsList.vue";
 import ScheduleView from "./views/ScheduleView.vue";
 import SemesterPlanView from "./views/SemesterPlanView.vue";
+import University from './views/University.vue';
+import UniversityCourse from './views/UniversityCourse.vue';
+import UniversityTranscript from './views/UniversityTranscript.vue';
+import TranscriptCourse from './views/TranscriptCourse.vue';
+import Semester from './views/Semester.vue';
+import Catalog from './views/Catalog.vue';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -42,11 +47,6 @@ const router = createRouter({
       component: AdminImport,
     },
     {
-      path: "/admin/terms",
-      name: "adminTerms",
-      component: AdminTermsList,
-    },
-    {
       path: "/admin/users",
       name: "adminUsers",
       component: AdminUsersList,
@@ -76,6 +76,37 @@ const router = createRouter({
       name: "semesterPlan",
       component: SemesterPlanView,
     },
+    {
+      path: '/universities',
+      name: 'Universities',
+      component: University
+    },
+    {
+      path: '/university-courses',
+      name: 'University Courses',
+      component: UniversityCourse
+    },
+    {
+      path: '/transcripts',
+      name: 'Transcripts',
+      component: UniversityTranscript
+    },
+    {
+      path: '/transcript-courses/:id',
+      name: 'Transcript Courses',
+      component: TranscriptCourse,
+      props: true
+    },
+    {
+      path: '/semesters',
+      name: 'Semesters',
+      component: Semester
+    },
+    {
+      path: '/catalogs',
+      name: 'Catalogs',
+      component: Catalog
+    }
   ],
 });
 

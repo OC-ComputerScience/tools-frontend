@@ -1,22 +1,22 @@
 <script setup>
 import { ref, onMounted, computed, watch } from "vue";
-import TermServices from "../services/termServices";
+import SemesterServices from "../services/semesterServices";
 import SectionServices from "../services/sectionServices";
 import MeetingTimeServices from "../services/meetingTimeServices";
 import MajorServices from "../services/majorServices";
 import SemesterPlanServices from "../services/semesterPlanServices";
 import CourseServices from "../services/courseServices";
 
-const terms = ref([]);
+const semesters = ref([]);
 const majors = ref([]);
 const selectedMajor = ref(null);
+const selectedSemesterNumber = ref(null);
 const selectedSemester = ref(null);
-const selectedTerm = ref(null);
 const semesterPlans = ref([]);
 const courses = ref([]);
 const sections = ref([]);
 const meetingTimes = ref([]);
-const message = ref("Select major, semester, and term to view schedule");
+const message = ref("Select major, semester number, and semester to view schedule");
 const semesterNumbers = ref([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]); // Common semester numbers
 const hide100AndAbove = ref(true); // Filter out sections with section numbers 100 and greater (default: checked)
 const hiddenSectionIds = ref(new Set()); // Track hidden section IDs
@@ -46,13 +46,13 @@ const daysOfWeek = [
   { key: "sunday", label: "Sunday" },
 ];
 
-const retrieveTerms = () => {
-  TermServices.getAllTerms()
+const retrieveSemesters = () => {
+  SemesterServices.getAll()
     .then((response) => {
-      terms.value = response.data;
+      semesters.value = response.data;
     })
     .catch((e) => {
-      message.value = e.response?.data?.message || "Error loading terms";
+      message.value = e.response?.data?.message || "Error loading semesters";
     });
 };
 
@@ -67,7 +67,7 @@ const retrieveMajors = () => {
 };
 
 const retrieveSemesterPlans = async () => {
-  if (!selectedMajor.value || !selectedSemester.value) {
+  if (!selectedMajor.value || !selectedSemesterNumber.value) {
     semesterPlans.value = [];
     courses.value = [];
     return;
@@ -76,7 +76,7 @@ const retrieveSemesterPlans = async () => {
   try {
     const response = await SemesterPlanServices.getAllSemesterPlans({
       majorId: selectedMajor.value,
-      semesterNumber: selectedSemester.value,
+      semesterNumber: selectedSemesterNumber.value,
     });
 
     semesterPlans.value = response.data;
@@ -99,8 +99,8 @@ const retrieveSemesterPlans = async () => {
 
     message.value = `Loaded ${semesterPlans.value.length} course(s) in semester plan`;
 
-    // If term is also selected, load sections
-    if (selectedTerm.value) {
+    // If semester is also selected, load sections
+    if (selectedSemester.value) {
       await loadSections();
     }
   } catch (e) {
@@ -110,11 +110,11 @@ const retrieveSemesterPlans = async () => {
 };
 
 const loadSections = async () => {
-  if (!selectedTerm.value || courses.value.length === 0) {
+  if (!selectedSemester.value || courses.value.length === 0) {
     sections.value = [];
     meetingTimes.value = [];
-    if (!selectedTerm.value) {
-      message.value = "Select term to view schedule";
+    if (!selectedSemester.value) {
+      message.value = "Select semester to view schedule";
     } else {
       message.value = "No courses in semester plan to match";
     }
@@ -124,7 +124,7 @@ const loadSections = async () => {
   try {
     // Load all sections for the selected term
     const response = await SectionServices.getAllSections({
-      termId: selectedTerm.value,
+      semesterId: selectedSemester.value,
     });
 
     const allSections = response.data;
@@ -188,7 +188,7 @@ const loadSections = async () => {
 
     if (sections.value.length === 0) {
       meetingTimes.value = [];
-      message.value = `No sections found in term ${selectedTerm.value} matching semester plan courses`;
+      message.value = `No sections found in term ${selectedSemester.value} matching semester plan courses`;
       return;
     }
 
@@ -264,34 +264,34 @@ const loadMeetingTimes = async () => {
   }
 };
 
-// Watch for changes in major or semester
-watch([selectedMajor, selectedSemester], () => {
+// Watch for changes in major or semester number
+watch([selectedMajor, selectedSemesterNumber], () => {
   // Reset hidden list when selection criteria changes
   hiddenSectionIds.value.clear();
   
-  if (selectedMajor.value && selectedSemester.value) {
+  if (selectedMajor.value && selectedSemesterNumber.value) {
     retrieveSemesterPlans();
   } else {
     semesterPlans.value = [];
     courses.value = [];
     sections.value = [];
     meetingTimes.value = [];
-    message.value = "Select major and semester to view schedule";
+    message.value = "Select major, semester number, and semester to view schedule";
   }
 });
 
-// Watch for changes in term
-watch(selectedTerm, () => {
-  // Reset hidden list when term changes
+// Watch for changes in semester
+watch(selectedSemester, () => {
+  // Reset hidden list when semester changes
   hiddenSectionIds.value.clear();
   
-  if (selectedTerm.value && courses.value.length > 0) {
+  if (selectedSemester.value && courses.value.length > 0) {
     loadSections();
   } else {
     sections.value = [];
     meetingTimes.value = [];
-    if (selectedMajor.value && selectedSemester.value) {
-      message.value = "Select term to view schedule";
+    if (selectedMajor.value && selectedSemesterNumber.value) {
+      message.value = "Select semester to view schedule";
     }
   }
 });
@@ -430,7 +430,7 @@ const sectionMatchesCourse = (section, courseNum) => {
 
 // Helper function to get unmatched courses (courses in plan without matching sections)
 const getUnmatchedCourses = computed(() => {
-  if (!selectedTerm.value || courses.value.length === 0) {
+  if (!selectedSemester.value || courses.value.length === 0) {
     return [];
   }
 
@@ -467,7 +467,7 @@ const getUnmatchedCourses = computed(() => {
 // Helper function to get courses in plan that are not displayed in the schedule
 // This includes courses without matching sections AND courses with sections that aren't visible
 const getCoursesNotInSchedule = computed(() => {
-  if (!selectedTerm.value || courses.value.length === 0) {
+  if (!selectedSemester.value || courses.value.length === 0) {
     return [];
   }
 
@@ -566,7 +566,7 @@ const getMeetingTimesForSlot = (dayKey, slot) => {
 };
 
 onMounted(() => {
-  retrieveTerms();
+  retrieveSemesters();
   retrieveMajors();
 });
 </script>
@@ -580,7 +580,7 @@ onMounted(() => {
       <br />
 
       <v-card>
-        <v-card-title>Select Major, Semester, and Term</v-card-title>
+        <v-card-title>Select Major, Semester Number, and Semester</v-card-title>
         <v-card-text>
           <v-row>
             <v-col cols="12" md="4">
@@ -594,7 +594,7 @@ onMounted(() => {
             </v-col>
             <v-col cols="12" md="4">
               <v-select
-                v-model="selectedSemester"
+                v-model="selectedSemesterNumber"
                 :items="semesterNumbers"
                 label="Select Semester Number"
                 :disabled="!selectedMajor"
@@ -602,12 +602,12 @@ onMounted(() => {
             </v-col>
             <v-col cols="12" md="4">
               <v-select
-                v-model="selectedTerm"
-                :items="terms"
-                item-title="termName"
+                v-model="selectedSemester"
+                :items="semesters"
+                item-title="name"
                 item-value="id"
-                label="Select Term"
-                :disabled="!selectedMajor || !selectedSemester"
+                label="Select Semester"
+                :disabled="!selectedMajor || !selectedSemesterNumber"
               ></v-select>
             </v-col>
           </v-row>
@@ -621,7 +621,7 @@ onMounted(() => {
 
       <!-- Courses Not in Schedule List -->
       <v-card
-        v-if="selectedMajor && selectedSemester && selectedTerm && getCoursesNotInSchedule.length > 0"
+        v-if="selectedMajor && selectedSemester && selectedSemester && getCoursesNotInSchedule.length > 0"
         class="mb-4"
       >
         <v-card-title>Courses Not in Schedule</v-card-title>
@@ -644,7 +644,7 @@ onMounted(() => {
 
       <!-- Hidden Courses List -->
       <v-card
-        v-if="selectedMajor && selectedSemester && selectedTerm && getHiddenSections.length > 0"
+        v-if="selectedMajor && selectedSemesterNumber && selectedSemester && getHiddenSections.length > 0"
         class="mb-4"
       >
         <v-card-title>Hidden Courses</v-card-title>
@@ -668,7 +668,7 @@ onMounted(() => {
       </v-card>
 
       <v-card
-        v-if="selectedMajor && selectedSemester && selectedTerm && meetingTimes.length > 0"
+        v-if="selectedMajor && selectedSemesterNumber && selectedSemester && meetingTimes.length > 0"
       >
         <v-card-title>Weekly Schedule</v-card-title>
         <v-card-text>
@@ -770,8 +770,8 @@ onMounted(() => {
                           <div v-if="mt.section?.user?.email">
                             <strong>Email:</strong> {{ mt.section.user.email }}
                           </div>
-                          <div v-if="mt.section?.term">
-                            <strong>Term:</strong> {{ mt.section.term.termName }}
+                          <div v-if="mt.section?.semester">
+                            <strong>Semester:</strong> {{ mt.section.semester.name }}
                           </div>
                           <div>
                             <strong>Time:</strong> {{ formatTime(mt.startTime) }}-{{ formatTime(mt.endTime) }}
@@ -815,12 +815,12 @@ onMounted(() => {
       </v-card>
 
       <v-card
-        v-else-if="selectedMajor && selectedSemester && selectedTerm && meetingTimes.length === 0"
+        v-else-if="selectedMajor && selectedSemesterNumber && selectedSemester && meetingTimes.length === 0"
         class="mt-4"
       >
         <v-card-text>
           <div class="text-center">
-            No sections found for the selected semester plan in the selected term.
+            No sections found for the selected semester plan in the selected semester.
           </div>
         </v-card-text>
       </v-card>

@@ -1,20 +1,20 @@
 <script setup>
 import { ref, onMounted, computed, watch } from "vue";
-import TermServices from "../services/termServices";
+import SemesterServices from "../services/semesterServices";
 import SectionServices from "../services/sectionServices";
 import MeetingTimeServices from "../services/meetingTimeServices";
 import UserServices from "../services/userServices";
 import jsPDF from "jspdf";
 
-const terms = ref([]);
+const semesters = ref([]);
 const users = ref([]);
-const selectedTerm = ref(null);
+const selectedSemester = ref(null);
 const selectedUser = ref(null);
 const coursePrefix1 = ref("");
 const coursePrefix2 = ref("");
 const courses = ref([]);
 const meetingTimes = ref([]);
-const message = ref("Select a term and course prefix(es) to view schedule");
+const message = ref("Select a semester and course prefix(es) to view schedule");
 const uniquePrefixes = ref([]);
 const showOfficeHoursDialog = ref(false);
 const officeHours = ref([]);
@@ -46,13 +46,13 @@ const daysOfWeek = [
   { key: "saturday", label: "Saturday" },
 ];
 
-const retrieveTerms = () => {
-  TermServices.getAllTerms()
+const retrieveSemesters = () => {
+  SemesterServices.getAll()
     .then((response) => {
-      terms.value = response.data;
+      semesters.value = response.data;
     })
     .catch((e) => {
-      message.value = e.response?.data?.message || "Error loading terms";
+      message.value = e.response?.data?.message || "Error loading semesters";
     });
 };
 
@@ -67,16 +67,17 @@ const retrieveUsers = () => {
 };
 
 const retrieveCourses = async () => {
-  if (!selectedTerm.value) {
+  if (!selectedSemester.value) {
     courses.value = [];
     uniquePrefixes.value = [];
     meetingTimes.value = [];
+    message.value = "Select a semester to view courses";
     return;
   }
 
   try {
     const params = {
-      termId: selectedTerm.value,
+      semesterId: selectedSemester.value,
     };
 
     // Add userId filter if a user is selected
@@ -84,35 +85,52 @@ const retrieveCourses = async () => {
       params.userId = selectedUser.value;
     }
 
+    console.log("Fetching courses with params:", params);
     const response = await SectionServices.getAllSections(params);
+    console.log("Courses response:", response);
 
-    courses.value = response.data;
+    if (response && response.data) {
+      courses.value = response.data;
+      console.log(`Loaded ${courses.value.length} course(s)`);
 
-    // Extract unique course prefixes (first 4 characters)
-    const prefixes = new Set();
-    courses.value.forEach((course) => {
-      if (course.courseNumber && course.courseNumber.length >= 4) {
-        prefixes.add(course.courseNumber.substring(0, 4).toUpperCase());
+      // Extract unique course prefixes (first 4 characters)
+      const prefixes = new Set();
+      courses.value.forEach((course) => {
+        if (course.courseNumber && course.courseNumber.length >= 4) {
+          prefixes.add(course.courseNumber.substring(0, 4).toUpperCase());
+        }
+      });
+      uniquePrefixes.value = Array.from(prefixes).sort();
+
+      // If a prefix is selected or a user is selected, load meeting times
+      if (coursePrefix1.value || coursePrefix2.value || selectedUser.value) {
+        await loadMeetingTimes();
+      } else {
+        // Update message when courses are loaded but no prefixes or user selected
+        if (courses.value.length > 0) {
+          message.value = `Loaded ${courses.value.length} course(s). Select course prefix(es) or a user to view schedule.`;
+        } else {
+          message.value = `No courses found for the selected semester.`;
+        }
       }
-    });
-    uniquePrefixes.value = Array.from(prefixes).sort();
-
-    // If a prefix is selected or a user is selected, load meeting times
-    if (coursePrefix1.value || coursePrefix2.value || selectedUser.value) {
-      await loadMeetingTimes();
     } else {
-      // Update message when courses are loaded but no prefixes or user selected
-      message.value = `Loaded ${courses.value.length} course(s). Select course prefix(es) or a user to view schedule.`;
+      courses.value = [];
+      uniquePrefixes.value = [];
+      message.value = "No courses found for the selected semester.";
+      console.warn("No data in response:", response);
     }
   } catch (e) {
-    message.value = e.response?.data?.message || "Error loading courses";
+    console.error("Error loading courses:", e);
+    courses.value = [];
+    uniquePrefixes.value = [];
+    message.value = e.response?.data?.message || "Error loading courses. Please check the browser console for details.";
   }
 };
 
 const loadMeetingTimes = async () => {
-  if (!selectedTerm.value) {
+  if (!selectedSemester.value) {
     meetingTimes.value = [];
-    message.value = "Select a term to view schedule";
+    message.value = "Select a semester to view schedule";
     return;
   }
 
@@ -218,9 +236,10 @@ const loadMeetingTimes = async () => {
   }
 };
 
-// Watch for changes in selected term
-watch(selectedTerm, () => {
-  if (selectedTerm.value) {
+// Watch for changes in selected semester
+watch(selectedSemester, (newValue, oldValue) => {
+  console.log("Semester selection changed:", { newValue, oldValue });
+  if (selectedSemester.value) {
     retrieveCourses();
   } else {
     courses.value = [];
@@ -228,23 +247,23 @@ watch(selectedTerm, () => {
     meetingTimes.value = [];
     coursePrefix1.value = "";
     coursePrefix2.value = "";
-    message.value = "Select a term and course prefix(es) to view schedule";
+    message.value = "Select a semester and course prefix(es) to view schedule";
   }
-});
+}, { immediate: false });
 
 // Watch for changes in selected user
 watch(selectedUser, () => {
-  if (selectedTerm.value) {
+  if (selectedSemester.value) {
     retrieveCourses();
   } else {
     meetingTimes.value = [];
-    message.value = "Select a term to view schedule";
+    message.value = "Select a semester to view schedule";
   }
 });
 
 // Watch for changes in course prefixes
 watch([coursePrefix1, coursePrefix2], () => {
-  if (selectedTerm.value) {
+  if (selectedSemester.value) {
     // If prefixes or user is selected, load meeting times
     if (coursePrefix1.value || coursePrefix2.value || selectedUser.value) {
       loadMeetingTimes();
@@ -299,7 +318,7 @@ const timeSlots = computed(() => {
 // Computed property to determine if prefixes can be selected
 // User selection is optional - prefixes are available when term is selected and courses are loaded
 const prefixesEnabled = computed(() => {
-  return selectedTerm.value && uniquePrefixes.value.length > 0;
+  return selectedSemester.value && uniquePrefixes.value.length > 0;
 });
 
 // Helper function to format hour for display
@@ -360,7 +379,7 @@ const hexToRgb = (hex) => {
 const openPDFDialog = () => {
   if (
     !selectedUser.value ||
-    !selectedTerm.value ||
+    !selectedSemester.value ||
     meetingTimes.value.length === 0
   ) {
     return;
@@ -417,7 +436,7 @@ const removeOfficeHour = (index) => {
 const generatePDF = () => {
   if (
     !selectedUser.value ||
-    !selectedTerm.value ||
+    !selectedSemester.value ||
     meetingTimes.value.length === 0
   ) {
     return;
@@ -428,9 +447,11 @@ const generatePDF = () => {
 
   // Get user and term information
   const selectedUserData = users.value.find((u) => u.id === selectedUser.value);
-  const selectedTermData = terms.value.find((t) => t.id === selectedTerm.value);
+  const selectedSemesterData = semesters.value.find(
+    (s) => s.id === selectedSemester.value
+  );
 
-  if (!selectedUserData || !selectedTermData) {
+  if (!selectedUserData || !selectedSemesterData) {
     return;
   }
 
@@ -465,9 +486,9 @@ const generatePDF = () => {
   // Add term/subheading (centered)
   doc.setFontSize(subheadingFontSize);
   doc.setFont(undefined, "normal");
-  const termText = `Term: ${selectedTermData.termName}`;
-  const termWidth = doc.getTextWidth(termText);
-  doc.text(termText, (pageWidth - termWidth) / 2, yPos);
+  const semesterText = `Semester: ${selectedSemesterData.name}`;
+  const semesterWidth = doc.getTextWidth(semesterText);
+  doc.text(semesterText, (pageWidth - semesterWidth) / 2, yPos);
   yPos += 10;
 
   // Create a color palette for courses
@@ -924,12 +945,12 @@ const generatePDF = () => {
   });
 
   // Save PDF
-  const fileName = `Schedule_${selectedUserData.fName}_${selectedUserData.lName}_${selectedTermData.termName}.pdf`;
+  const fileName = `Schedule_${selectedUserData.fName}_${selectedUserData.lName}_${selectedSemesterData.name}.pdf`;
   doc.save(fileName);
 };
 
 onMounted(() => {
-  retrieveTerms();
+  retrieveSemesters();
   retrieveUsers();
 });
 </script>
@@ -943,16 +964,16 @@ onMounted(() => {
       <br />
 
       <v-card>
-        <v-card-title>Select Term, User, and Course Prefixes</v-card-title>
+        <v-card-title>Select Semester, User, and Course Prefixes</v-card-title>
         <v-card-text>
           <v-row>
             <v-col cols="12" md="3">
               <v-select
-                v-model="selectedTerm"
-                :items="terms"
-                item-title="termName"
+                v-model="selectedSemester"
+                :items="semesters"
+                item-title="name"
                 item-value="id"
-                label="Select Term"
+                label="Select Semester"
               ></v-select>
             </v-col>
             <v-col cols="12" md="3">
@@ -967,7 +988,7 @@ onMounted(() => {
                 item-title="title"
                 item-value="value"
                 label="Select User (Optional)"
-                :disabled="!selectedTerm"
+                :disabled="!selectedSemester"
                 clearable
               ></v-select>
             </v-col>
@@ -1030,7 +1051,7 @@ onMounted(() => {
 
       <v-card
         v-if="
-          selectedTerm &&
+          selectedSemester &&
           (coursePrefix1 || coursePrefix2 || selectedUser) &&
           meetingTimes.length > 0
         "
@@ -1141,9 +1162,9 @@ onMounted(() => {
                           <div v-if="mt.section?.user?.email">
                             <strong>Email:</strong> {{ mt.section.user.email }}
                           </div>
-                          <div v-if="mt.section?.term">
-                            <strong>Term:</strong>
-                            {{ mt.section.term.termName }}
+                          <div v-if="mt.section?.semester">
+                            <strong>Semester:</strong>
+                            {{ mt.section.semester.name }}
                           </div>
                           <div>
                             <strong>Time:</strong>
@@ -1191,7 +1212,7 @@ onMounted(() => {
 
       <v-card
         v-else-if="
-          selectedTerm &&
+          selectedSemester &&
           (coursePrefix1 || coursePrefix2 || selectedUser) &&
           meetingTimes.length === 0
         "
