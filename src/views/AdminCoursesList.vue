@@ -1,32 +1,32 @@
 <script setup>
 import SectionServices from "../services/sectionServices";
-import TermServices from "../services/termServices";
+import SemesterServices from "../services/semesterServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
 import UserServices from "../services/userServices";
 import { ref, onMounted } from "vue";
 
 const courses = ref([]);
-const terms = ref([]);
+const semesters = ref([]);
 const users = ref([]);
-const selectedTerm = ref(null);
+const selectedSemester = ref(null);
 const selectedFaculty = ref(null);
-const message = ref("Select a term to view courses");
+const message = ref("Select a semester to view courses");
 const totalSections = ref(0);
 const totalAssignments = ref(0);
 const facultyWithNoAssignments = ref(0);
 const facultyWithAssignments = ref(0);
 
-const retrieveTerms = () => {
-  TermServices.getAllTerms()
+const retrieveSemesters = () => {
+  SemesterServices.getAll()
     .then((response) => {
-      terms.value = response.data;
+      semesters.value = response.data;
       if (response.data.length > 0) {
-        selectedTerm.value = response.data[0].id;
+        selectedSemester.value = response.data[0].id;
         retrieveCourses();
       }
     })
     .catch((e) => {
-      message.value = e.response?.data?.message || "Error loading terms";
+      message.value = e.response?.data?.message || "Error loading semesters";
     });
 };
 
@@ -45,26 +45,26 @@ const retrieveUsers = () => {
 };
 
 const exportAssignedCourses = async () => {
-  if (!selectedTerm.value) {
-    alert("Please select a term first");
+  if (!selectedSemester.value) {
+    alert("Please select a semester first");
     return;
   }
 
   try {
     // Get the selected term details
-    const selectedTermData = terms.value.find(t => t.id === selectedTerm.value);
-    if (!selectedTermData) {
-      alert("Term not found");
+    const selectedSemesterData = semesters.value.find(t => t.id === selectedSemester.value);
+    if (!selectedSemesterData) {
+      alert("Semester not found");
       return;
     }
 
-    // Get all sections for the selected term with their term info
-    const sectionsResponse = await SectionServices.getAllSections({ termId: selectedTerm.value });
+    // Get all sections for the selected semester with their semester info
+    const sectionsResponse = await SectionServices.getAllSections({ semesterId: selectedSemester.value });
     const sections = sectionsResponse.data || [];
     const sectionIds = sections.map(s => s.id);
 
     if (sectionIds.length === 0) {
-      alert("No sections found for the selected term");
+      alert("No sections found for the selected semester");
       return;
     }
 
@@ -78,16 +78,16 @@ const exportAssignedCourses = async () => {
     const allAssignedCoursesResponse = await AssignedCourseServices.getAllAssignedCourses({});
     const allAssignedCourses = allAssignedCoursesResponse.data || [];
     
-    // Filter to only assigned courses for sections in the selected term
-    const termAssignedCourses = allAssignedCourses.filter(ac => sectionIds.includes(ac.sectionId));
+    // Filter to only assigned courses for sections in the selected semester
+    const semesterAssignedCourses = allAssignedCourses.filter(ac => sectionIds.includes(ac.sectionId));
 
-    if (termAssignedCourses.length === 0) {
-      alert("No assigned courses found for the selected term");
+    if (semesterAssignedCourses.length === 0) {
+      alert("No assigned courses found for the selected semester");
       return;
     }
 
     // Get unique assigned section IDs to fetch their details with term info
-    const assignedSectionIds = [...new Set(termAssignedCourses.map(ac => ac.assignedSectionId))];
+    const assignedSectionIds = [...new Set(semesterAssignedCourses.map(ac => ac.assignedSectionId))];
     
     // Fetch all assigned sections with their term info
     const assignedSectionsResponses = await Promise.all(
@@ -109,26 +109,26 @@ const exportAssignedCourses = async () => {
     csvRows.push(['course_id', 'export_filename', 'term_id', 'short_name', 'long_name', 'accountId'].join(','));
 
     // CSV Data rows
-    termAssignedCourses.forEach((assignedCourse) => {
+    semesterAssignedCourses.forEach((assignedCourse) => {
       // Get the original section
       const section = sectionMap.get(assignedCourse.sectionId);
       if (!section) return;
 
-      // Get the assigned section with term info
+      // Get the assigned section with semester info
       const assignedSection = assignedSectionMap.get(assignedCourse.assignedSectionId);
       if (!assignedSection) return;
 
-      const sectionTerm = section.term || selectedTermData;
-      const assignedSectionTerm = assignedSection.term || { termName: '' };
+      const sectionSemester = section.semester || selectedSemesterData;
+      const assignedSectionSemester = assignedSection.semester || { name: '' };
 
-      // course_id: <term name>_<course number>_<section number>
-      const courseId = `${sectionTerm.termName}_${section.courseNumber}_${section.courseSection}`;
+      // course_id: <semester name>_<course number>_<section number>
+      const courseId = `${sectionSemester.name}_${section.courseNumber}_${section.courseSection}`;
 
-      // export_filename: ArchiveFile_<assigned course term name>_<assigned course number>-<assigned course section number>.zip
-      const exportFilename = `ArchiveFile_${assignedSectionTerm.termName}_${assignedSection.courseNumber}-${assignedSection.courseSection}.zip`;
+      // export_filename: ArchiveFile_<assigned course semester name>_<assigned course number>-<assigned course section number>.zip
+      const exportFilename = `ArchiveFile_${assignedSectionSemester.name}_${assignedSection.courseNumber}-${assignedSection.courseSection}.zip`;
 
-      // term_id: <term name>
-      const termId = sectionTerm.termName;
+      // term_id: <semester name>
+      const semesterId = sectionSemester.name;
 
       // short_name: <course number>-<section number>
       const shortName = `${section.courseNumber}-${section.courseSection}`;
@@ -149,7 +149,7 @@ const exportAssignedCourses = async () => {
       csvRows.push([
         escapeCsvValue(courseId),
         escapeCsvValue(exportFilename),
-        escapeCsvValue(termId),
+        escapeCsvValue(semesterId),
         escapeCsvValue(shortName),
         escapeCsvValue(longName),
         escapeCsvValue(section.accountId || '')
@@ -164,7 +164,7 @@ const exportAssignedCourses = async () => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `canvas_migration_${selectedTermData.termName}.csv`);
+    link.setAttribute('download', `canvas_migration_${selectedSemesterData.name}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -176,7 +176,7 @@ const exportAssignedCourses = async () => {
 };
 
 const retrieveCourses = () => {
-  if (!selectedTerm.value) {
+  if (!selectedSemester.value) {
     courses.value = [];
     totalSections.value = 0;
     totalAssignments.value = 0;
@@ -185,7 +185,7 @@ const retrieveCourses = () => {
     return;
   }
 
-  const params = { termId: selectedTerm.value };
+  const params = { semesterId: selectedSemester.value };
   if (selectedFaculty.value) {
     params.userId = selectedFaculty.value;
   }
@@ -219,7 +219,7 @@ const retrieveCourses = () => {
 };
 
 const calculateStats = async () => {
-  if (!selectedTerm.value) {
+  if (!selectedSemester.value) {
     totalSections.value = 0;
     totalAssignments.value = 0;
     facultyWithNoAssignments.value = 0;
@@ -229,17 +229,17 @@ const calculateStats = async () => {
 
   try {
     // Build params for sections query based on selected filters
-    const sectionParams = { termId: selectedTerm.value };
+    const sectionParams = { semesterId: selectedSemester.value };
     if (selectedFaculty.value) {
       sectionParams.userId = selectedFaculty.value;
     }
 
-    // Get sections for the selected term (and faculty if selected)
+    // Get sections for the selected semester (and faculty if selected)
     const sectionsResponse = await SectionServices.getAllSections(sectionParams);
     const allSections = sectionsResponse.data || [];
     totalSections.value = allSections.length;
 
-    // Get all assignments for sections in this term
+    // Get all assignments for sections in this semester
     const assignedCoursesResponse = await AssignedCourseServices.getAllAssignedCourses({});
     const allAssignments = assignedCoursesResponse.data || [];
     
@@ -256,11 +256,11 @@ const calculateStats = async () => {
       facultyWithAssignments.value = hasAssignments ? 1 : 0;
       facultyWithNoAssignments.value = hasAssignments ? 0 : 1;
     } else {
-      // Get all sections for the term (without faculty filter) to calculate this stat
-      const allTermSectionsResponse = await SectionServices.getAllSections({ termId: selectedTerm.value });
+      // Get all sections for the semester (without faculty filter) to calculate this stat
+      const allTermSectionsResponse = await SectionServices.getAllSections({ semesterId: selectedSemester.value });
       const allTermSections = allTermSectionsResponse.data || [];
       
-      // Get unique faculty IDs from all sections in the term
+      // Get unique faculty IDs from all sections in the semester
       const facultyIds = [...new Set(allTermSections.map(s => s.userId))];
       
       // Get section IDs that have assignments
@@ -291,7 +291,7 @@ const calculateStats = async () => {
 };
 
 onMounted(() => {
-  retrieveTerms();
+  retrieveSemesters();
   retrieveUsers();
 });
 </script>
@@ -305,16 +305,16 @@ onMounted(() => {
       <br />
 
       <v-card>
-        <v-card-title>Select Term and Faculty</v-card-title>
+        <v-card-title>Select Semester and Faculty</v-card-title>
         <v-card-text>
           <v-row>
             <v-col cols="12" md="6">
               <v-select
-                v-model="selectedTerm"
-                :items="terms"
-                item-title="termName"
+                v-model="selectedSemester"
+                :items="semesters"
+                item-title="name"
                 item-value="id"
-                label="Term"
+                label="Semester"
                 @update:model-value="retrieveCourses"
               ></v-select>
             </v-col>
@@ -335,7 +335,7 @@ onMounted(() => {
 
       <br />
 
-      <v-row v-if="selectedTerm">
+      <v-row v-if="selectedSemester">
         <v-col cols="12" md="3">
           <v-card>
             <v-card-title>Total Sections</v-card-title>
@@ -370,11 +370,11 @@ onMounted(() => {
         </v-col>
       </v-row>
 
-      <br v-if="selectedTerm" />
+      <br v-if="selectedSemester" />
 
-      <v-card v-if="selectedTerm">
+      <v-card v-if="selectedSemester">
         <v-card-title>
-          <span>Courses for Selected Term</span>
+          <span>Courses for Selected Semester</span>
           <v-spacer></v-spacer>
           <v-btn
             color="primary"

@@ -1,36 +1,36 @@
 <script setup>
 import { ref, onMounted } from "vue";
 import SectionServices from "../services/sectionServices";
-import TermServices from "../services/termServices";
+import SemesterServices from "../services/semesterServices";
 import UserServices from "../services/userServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
 import Utils from "../config/utils.js";
 
 const user = Utils.getStore("user");
 const totalCourses = ref(0);
-const totalTerms = ref(0);
+const totalSemesters = ref(0);
 const totalUsers = ref(0);
 const totalAssignments = ref(0);
-const selectedTerm = ref(null);
+const selectedSemester = ref(null);
 const selectedUser = ref(null);
-const terms = ref([]);
+const semesters = ref([]);
 const users = ref([]);
 const coursesWithCount = ref([]);
 const message = ref("");
 const assignmentDialogs = ref({});
 
 const retrieveStats = () => {
-  TermServices.getAllTerms()
+  SemesterServices.getAll()
     .then((response) => {
-      terms.value = response.data;
-      totalTerms.value = response.data.length;
+      semesters.value = response.data;
+      totalSemesters.value = response.data.length;
       if (response.data.length > 0) {
-        selectedTerm.value = response.data[0].id;
+        selectedSemester.value = response.data[0].id;
         loadCoursesWithCount();
       }
     })
     .catch((e) => {
-      message.value = e.response?.data?.message || "Error loading terms";
+      message.value = e.response?.data?.message || "Error loading semesters";
     });
 
   UserServices.getAllUsers()
@@ -44,7 +44,7 @@ const retrieveStats = () => {
     })
     .catch(() => {});
 
-  // Get total courses across all terms (no termId filter)
+  // Get total courses across all terms (no semesterId filter)
   SectionServices.getAllSections()
     .then((response) => {
       totalCourses.value = response.data.length;
@@ -80,9 +80,9 @@ const retrieveStats = () => {
 };
 
 const loadCoursesWithCount = () => {
-  if (!selectedTerm.value) return;
+  if (!selectedSemester.value) return;
 
-  const params = { termId: selectedTerm.value };
+  const params = { semesterId: selectedSemester.value };
   // Only add userId if a user is explicitly selected (not null/undefined/empty string)
   if (
     selectedUser.value !== null &&
@@ -98,11 +98,11 @@ const loadCoursesWithCount = () => {
       coursesWithCount.value = response.data
         .map((course) => {
           // Initialize assignment-related properties
-          if (!course.availableTerms) {
-            course.availableTerms = null;
+          if (!course.availableSemesters) {
+            course.availableSemesters = null;
           }
-          if (!course.selectedTermForAssignment) {
-            course.selectedTermForAssignment = null;
+          if (!course.selectedSemesterForAssignment) {
+            course.selectedSemesterForAssignment = null;
           }
           if (!course.selectedCourseForAssignment) {
             course.selectedCourseForAssignment = null;
@@ -138,11 +138,11 @@ const loadCoursesWithCount = () => {
     });
 };
 
-// Helper function to check if a term started in the past
-const isTermInPast = (term) => {
-  if (!term || !term.startDate) return false;
+// Helper function to check if a semester started in the past
+const isSemesterInPast = (semester) => {
+  if (!semester || !semester.startDate) return false;
 
-  const startDate = new Date(term.startDate);
+  const startDate = new Date(semester.startDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0); // Reset time to midnight for accurate date comparison
   startDate.setHours(0, 0, 0, 0);
@@ -150,16 +150,16 @@ const isTermInPast = (term) => {
   return startDate < today;
 };
 
-// Helper function to get the term for a course
-const getCourseTerm = (course) => {
-  return course.term || terms.value.find((t) => t.id === course.termId);
+// Helper function to get the semester for a course
+const getCourseSemester = (course) => {
+  return course.semester || semesters.value.find((s) => s.id === course.semesterId);
 };
 
 const openAssignmentDialog = async (course) => {
-  // Check if course's term started in the past
-  const courseTerm = getCourseTerm(course);
+  // Check if course's semester started in the past
+  const courseSemester = getCourseSemester(course);
 
-  if (courseTerm && isTermInPast(courseTerm)) {
+  if (courseSemester && isSemesterInPast(courseSemester)) {
     // Auto-assign course to itself
     const assignedCourse = {
       sectionId: course.id,
@@ -189,32 +189,32 @@ const openAssignmentDialog = async (course) => {
 
   // Normal flow - show dialog
   assignmentDialogs.value[course.id] = true;
-  if (!course.availableTerms) {
-    loadAvailableTerms(course);
+  if (!course.availableSemesters) {
+    loadAvailableSemesters(course);
   }
 };
 
-const loadAvailableTerms = (course) => {
-  TermServices.getAllTerms()
+const loadAvailableSemesters = (course) => {
+  SemesterServices.getAll()
     .then((response) => {
-      course.availableTerms = response.data.filter(
-        (t) => t.id !== course.termId
+      course.availableSemesters = response.data.filter(
+        (s) => s.id !== course.semesterId
       );
-      course.selectedTermForAssignment = null;
+      course.selectedSemesterForAssignment = null;
       course.availableCourses = [];
     })
     .catch(() => {
-      course.availableTerms = [];
+      course.availableSemesters = [];
     });
 };
 
-const loadCoursesForTerm = (course, termId) => {
-  if (!termId) {
+const loadCoursesForSemester = (course, semesterId) => {
+  if (!semesterId) {
     course.availableCourses = [];
     return;
   }
 
-  SectionServices.getAllSections({ termId: termId })
+  SectionServices.getAllSections({ semesterId: semesterId })
     .then((response) => {
       // Filter courses to only show those matching the current course's courseNumber
       // Transform items to include a title property for display
@@ -248,7 +248,7 @@ const assignCourse = async (course) => {
     assignmentDialogs.value[course.id] = false;
 
     // Clear selection state
-    course.selectedTermForAssignment = null;
+    course.selectedSemesterForAssignment = null;
     course.selectedCourseForAssignment = null;
     course.availableCourses = [];
 
@@ -354,16 +354,16 @@ onMounted(() => {
       <br />
 
       <v-card>
-        <v-card-title>Courses by Term</v-card-title>
+        <v-card-title>Courses by Semester</v-card-title>
         <v-card-text>
           <v-row>
             <v-col cols="12" md="6">
               <v-select
-                v-model="selectedTerm"
-                :items="terms"
-                item-title="termName"
+                v-model="selectedSemester"
+                :items="semesters"
+                item-title="name"
                 item-value="id"
-                label="Select Term"
+                label="Select Semester"
                 @update:model-value="loadCoursesWithCount"
               ></v-select>
             </v-col>
@@ -380,7 +380,7 @@ onMounted(() => {
             </v-col>
           </v-row>
         </v-card-text>
-        <v-table v-if="selectedTerm">
+        <v-table v-if="selectedSemester">
           <thead>
             <tr>
               <th class="text-left">Course Number</th>
@@ -399,7 +399,7 @@ onMounted(() => {
               <td>{{ course.user?.fName }} {{ course.user?.lName }}</td>
               <td>
                 <span v-if="course.assignedSectionInfo">
-                  {{ course.assignedSectionInfo.term?.termName }}
+                  {{ course.assignedSectionInfo.semester?.name }}
                   {{ course.assignedSectionInfo.courseNumber }}-{{
                     course.assignedSectionInfo.courseSection
                   }}
@@ -411,7 +411,7 @@ onMounted(() => {
                 >
                   <!-- Fallback: try to get info from assignedCourse array directly -->
                   <span v-if="course.assignedCourse[0]?.assignedSection">
-                    {{ course.assignedCourse[0].assignedSection.term?.termName }}
+                    {{ course.assignedCourse[0].assignedSection.semester?.name }}
                     {{
                       course.assignedCourse[0].assignedSection.courseNumber
                     }}-{{
@@ -471,7 +471,7 @@ onMounted(() => {
           <v-card-text>
             <!-- Instruction Text -->
             <div class="mb-4 text-body-2">
-              Select the Blackboard term and course that you want imported into
+              Select the Blackboard semester and course that you want imported into
               the course below.
             </div>
 
@@ -482,7 +482,7 @@ onMounted(() => {
               </div>
               <div class="text-body-2">
                 <div>
-                  <strong>Semester:</strong> {{ course.term?.termName }}
+                  <strong>Semester:</strong> {{ course.semester?.name }}
                 </div>
                 <div>
                   <strong>Course:</strong> {{ course.courseNumber }}-{{
@@ -495,16 +495,16 @@ onMounted(() => {
             <v-divider class="mb-4"></v-divider>
 
             <v-select
-              v-model="course.selectedTermForAssignment"
-              :items="course.availableTerms || []"
-              item-title="termName"
+              v-model="course.selectedSemesterForAssignment"
+              :items="course.availableSemesters || []"
+              item-title="name"
               item-value="id"
-              label="Select Term"
-              @update:model-value="loadCoursesForTerm(course, $event)"
+              label="Select Semester"
+              @update:model-value="loadCoursesForSemester(course, $event)"
             ></v-select>
 
             <v-select
-              v-if="course.selectedTermForAssignment"
+              v-if="course.selectedSemesterForAssignment"
               v-model="course.selectedCourseForAssignment"
               :items="course.availableCourses || []"
               item-title="title"
