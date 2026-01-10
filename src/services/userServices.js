@@ -10,5 +10,10 @@ export default {
   updateUser(id, user) {
     return apiClient.put(`users/${id}`, user);
   },
+  importUsersCSV(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.post("users/import", formData);
+  },
 };
 

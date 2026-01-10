@@ -22,6 +22,12 @@ export default {
   deleteSection(id) {
     return apiClient.delete(`sections/${id}`);
   },
+  importSectionsCSV(file, semesterId) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("semesterId", semesterId);
+    return apiClient.post("sections/import", formData);
+  },
 };
 
 

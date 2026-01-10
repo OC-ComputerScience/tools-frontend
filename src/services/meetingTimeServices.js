@@ -22,5 +22,10 @@ export default {
   deleteMeetingTimeBySectionId(sectionId) {
     return apiClient.delete(`meetingTimes/section/${sectionId}`);
   },
+  importMeetingTimesCSV(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.post("meetingTimes/import", formData);
+  },
 };
 

@@ -61,12 +61,10 @@ const snackbarColor = ref("success");
 const pdfDialog = ref(false);
 const currentPdfUrl = ref("");
 
+// Track selected courses for each transcript course row
+const selectedCourseIds = ref({});
+
 const headers = [
-  {
-    title: "Transcript",
-    key: "universityTranscript.OCIdNumber",
-    width: "80px",
-  },
   { title: "Course\nNumber", key: "courseNumber", width: "80px" },
   { title: "Course\nDescription", key: "courseDescription", width: "150px" },
   { title: "Course\nHours", key: "courseHours", width: "60px" },
@@ -80,8 +78,7 @@ const headers = [
     key: "universityCourse.courseName",
     width: "120px",
   },
-  { title: "Course\nNumber", key: "course.number", width: "80px" },
-  { title: "Course\nDescription", key: "course.description", width: "120px" },
+  { title: "Course\nSelection", key: "courseSelection", width: "350px" },
   { title: "Semester", key: "semester.name", width: "80px" },
   { title: "Grade", key: "grade", width: "60px" },
   { title: "Status", key: "status", width: "80px" },
@@ -112,6 +109,12 @@ const initialize = async () => {
   await TranscriptCourseServices.getByTranscriptId(transcriptId.value)
     .then((response) => {
       transcriptCourses.value = response.data;
+      // Initialize selected course IDs with existing courseId if present
+      transcriptCourses.value.forEach((tc) => {
+        if (tc.courseId) {
+          selectedCourseIds.value[tc.id] = tc.courseId;
+        }
+      });
     })
     .catch((error) => {
       console.error("Error fetching transcript courses:", error);
@@ -456,7 +459,15 @@ const matchCourses = async () => {
 };
 
 const approveItem = async (item) => {
+  // Don't allow approval of unmatched courses
+  if (item.status === "UnMatched") {
+    return;
+  }
+  
   try {
+    // Toggle between Approved and Matched
+    const newStatus = item.status === "Approved" ? "Matched" : "Approved";
+    
     const updateData = {
       universityTranscriptId: item.universityTranscriptId,
       courseNumber: item.courseNumber,
@@ -466,7 +477,7 @@ const approveItem = async (item) => {
       courseId: item.courseId,
       semesterId: item.semesterId,
       grade: item.grade,
-      status: "Approved",
+      status: newStatus,
       statusChangedDate: new Date().toISOString(),
     };
 
@@ -486,8 +497,8 @@ const approveItem = async (item) => {
       }
     }
   } catch (error) {
-    console.error("Error approving course:", error);
-    alert("Error approving course. Please try again.");
+    console.error("Error toggling approval status:", error);
+    alert("Error updating course approval status. Please try again.");
   }
 };
 
@@ -546,11 +557,11 @@ const findClosestSemester = (courseSemester) => {
   };
 
   // Convert term to uppercase for comparison
-  const upperTerm = term.toUpperCase();
+  const upperTerm = term ? term.toUpperCase() : "";
 
   // Find the semester that matches both year and term (including abbreviations)
   const exactMatch = matchingYearSemesters.find((s) => {
-    const semesterName = s.name.toUpperCase();
+    const semesterName = s.name ? s.name.toUpperCase() : "";
     // Check for both full term and abbreviated term
     return (
       semesterName.includes(upperTerm) ||
@@ -573,6 +584,7 @@ const findMatchingUniversityCourse = (
 
   // Normalize the input course number by removing spaces, hyphens, and converting to uppercase
   const normalizeCourseNumber = (num) => {
+    if (!num) return "";
     return num.replace(/[\s-]/g, "").toUpperCase();
   };
 
@@ -635,6 +647,11 @@ const addOcrCourses = async () => {
       };
 
       transcriptCourses.value.push(newCourse);
+      
+      // Initialize selected course ID if courseId is present
+      if (newCourse.courseId) {
+        selectedCourseIds.value[newCourse.id] = newCourse.courseId;
+      }
     });
 
     showSnackbar("Courses added successfully");
@@ -677,7 +694,7 @@ const calculateGPA = (courses) => {
 
   courses.forEach((course) => {
     const hours = parseFloat(course.hours) || 0;
-    const grade = course.grade.toUpperCase();
+    const grade = course.grade ? course.grade.toUpperCase() : "";
     const points = gradePoints[grade] || 0;
 
     totalPoints += points * hours;
@@ -692,6 +709,81 @@ const showConfirmDialog = (title, message, action) => {
   confirmMessage.value = message;
   confirmAction.value = action;
   confirmDialog.value = true;
+};
+
+// Handle course selection in table dropdown
+const handleTableCourseSelect = (item, courseId) => {
+  if (courseId) {
+    selectedCourseIds.value[item.id] = courseId;
+    // Update the status to "Matched" when a course is selected
+    const index = transcriptCourses.value.findIndex(tc => tc.id === item.id);
+    if (index !== -1) {
+      transcriptCourses.value[index].status = "Matched";
+    }
+  } else {
+    delete selectedCourseIds.value[item.id];
+    // Optionally reset status when course is cleared
+    const index = transcriptCourses.value.findIndex(tc => tc.id === item.id);
+    if (index !== -1 && transcriptCourses.value[index].status === "Matched") {
+      transcriptCourses.value[index].status = "Unmatched";
+    }
+  }
+};
+
+// Get selected course for a transcript course item
+const getSelectedCourse = (item) => {
+  const courseId = selectedCourseIds.value[item.id];
+  if (!courseId) return null;
+  return courses.value.find((c) => c.id === courseId);
+};
+
+// Get row props based on grade
+const getRowProps = ({ item }) => {
+  const grade = item.grade?.toUpperCase()?.trim();
+  const isGreyRow = !['A', 'B', 'C', 'D'].includes(grade);
+  return {
+    class: {
+      'grey-row': isGreyRow,
+    },
+    style: isGreyRow ? { backgroundColor: '#e0e0e0' } : {},
+  };
+};
+
+// Save all selected courses
+const saveSelectedCourses = async () => {
+  loading.value = true;
+  try {
+    const updatePromises = [];
+    
+    for (const [transcriptCourseId, courseId] of Object.entries(selectedCourseIds.value)) {
+      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
+      if (transcriptCourse && courseId) {
+        const updateData = {
+          ...transcriptCourse,
+          courseId: courseId,
+          status: "Matched", // Ensure status is set to Matched
+        };
+        updatePromises.push(
+          TranscriptCourseServices.update(transcriptCourseId, updateData)
+        );
+      }
+    }
+
+    await Promise.all(updatePromises);
+    snackbarMessage.value = `Successfully updated ${updatePromises.length} transcript course(s)`;
+    snackbarColor.value = "success";
+    snackbar.value = true;
+    
+    // Reload the data
+    await initialize();
+  } catch (error) {
+    console.error("Error saving selected courses:", error);
+    snackbarMessage.value = "Error saving selected courses. Please try again.";
+    snackbarColor.value = "error";
+    snackbar.value = true;
+  } finally {
+    loading.value = false;
+  }
 };
 
 const handleConfirm = async () => {
@@ -779,14 +871,6 @@ onMounted(() => {
             Add Transcript Course
           </v-btn>
           <v-btn
-            color="secondary"
-            @click="matchCourses"
-            :loading="loading"
-            class="mr-2"
-          >
-            Match with Courses
-          </v-btn>
-          <v-btn
             color="info"
             @click="processOCR"
             :loading="ocrLoading"
@@ -814,6 +898,16 @@ onMounted(() => {
             <v-icon left>mdi-check-all</v-icon>
             Approve All
           </v-btn>
+          <v-btn
+            color="primary"
+            @click="saveSelectedCourses"
+            :loading="loading"
+            :disabled="Object.keys(selectedCourseIds).length === 0"
+            class="ml-2"
+          >
+            <v-icon left>mdi-content-save</v-icon>
+            Save Course Selections
+          </v-btn>
         </div>
       </v-col>
     </v-row>
@@ -826,12 +920,15 @@ onMounted(() => {
           :loading="loading"
           density="compact"
           class="elevation-1 compact-table"
+          :row-props="getRowProps"
         >
           <template v-slot:item.actions="{ item }">
             <v-icon
               small
               class="mr-2"
               :color="item.status === 'Approved' ? 'success' : 'grey'"
+              :class="{ 'cursor-not-allowed': item.status === 'UnMatched', 'cursor-pointer': item.status !== 'UnMatched' }"
+              :style="{ opacity: item.status === 'UnMatched' ? 0.3 : 1, pointerEvents: item.status === 'UnMatched' ? 'none' : 'auto' }"
               @click="approveItem(item)"
             >
               mdi-check-circle
@@ -847,6 +944,43 @@ onMounted(() => {
                 ? new Date(item.statusChangedDate).toLocaleDateString()
                 : "N/A"
             }}
+          </template>
+          <template v-slot:[`item.courseSelection`]="{ item }">
+            <v-autocomplete
+              :model-value="selectedCourseIds[item.id]"
+              :items="courses"
+              :item-title="(c) => {
+                const number = c.number || '';
+                const description = c.description || '';
+                return `${number} - ${description}`;
+              }"
+              item-value="id"
+              density="compact"
+              variant="outlined"
+              hide-details
+              clearable
+              class="compact-autocomplete"
+              @update:model-value="(value) => handleTableCourseSelect(item, value)"
+              :filter="
+                (item, queryText) => {
+                  const code = (item.code || '').toLowerCase();
+                  const number = (item.number || '').toLowerCase();
+                  const description = (item.description || '').toLowerCase();
+                  const text = `${code} ${number} ${description}`;
+                  const query = queryText.toLowerCase();
+                  return text.includes(query);
+                }
+              "
+            ></v-autocomplete>
+          </template>
+          <template v-slot:[`item.universityCourse.courseNumber`]="{ item }">
+            {{ item.universityCourse?.courseNumber || 'N/A' }}
+          </template>
+          <template v-slot:[`item.universityCourse.courseName`]="{ item }">
+            {{ item.universityCourse?.courseName || 'N/A' }}
+          </template>
+          <template v-slot:[`item.semester.name`]="{ item }">
+            {{ item.semester?.name || 'N/A' }}
           </template>
         </v-data-table>
       </v-col>
@@ -1033,7 +1167,6 @@ onMounted(() => {
                 <v-text-field
                   v-model="editedItem.grade"
                   label="Grade"
-                  required
                 ></v-text-field>
               </v-col>
               <v-col cols="12">
@@ -1147,5 +1280,21 @@ onMounted(() => {
 .compact-table :deep(.v-data-table__wrapper table tr th) {
   background-color: rgb(var(--v-theme-surface)) !important;
   font-weight: bold !important;
+}
+.compact-table :deep(tbody tr.grey-row) {
+  background-color: #e0e0e0 !important;
+}
+.compact-table :deep(tbody tr.grey-row td) {
+  background-color: #e0e0e0 !important;
+}
+.compact-table :deep(tbody tr.grey-row:hover) {
+  background-color: #d5d5d5 !important;
+}
+.compact-table :deep(tbody tr.grey-row:hover td) {
+  background-color: #d5d5d5 !important;
+}
+.compact-autocomplete :deep(.v-field__input),
+.compact-autocomplete :deep(.v-select__selection) {
+  font-size: 0.8rem !important;
 }
 </style>

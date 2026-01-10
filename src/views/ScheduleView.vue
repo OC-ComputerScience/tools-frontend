@@ -4,6 +4,8 @@ import SemesterServices from "../services/semesterServices";
 import SectionServices from "../services/sectionServices";
 import MeetingTimeServices from "../services/meetingTimeServices";
 import UserServices from "../services/userServices";
+import UserSectionServices from "../services/userSectionServices";
+import Utils from "../config/utils.js";
 import jsPDF from "jspdf";
 
 const semesters = ref([]);
@@ -16,6 +18,7 @@ const courses = ref([]);
 const meetingTimes = ref([]);
 const message = ref("Select a semester and course prefix(es) to view schedule");
 const uniquePrefixes = ref([]);
+const userSections = ref([]); // Sections mapped to the selected user
 const showOfficeHoursDialog = ref(false);
 const officeHours = ref([]);
 const newOfficeHour = ref({
@@ -24,6 +27,29 @@ const newOfficeHour = ref({
   endTime: "",
   type: "Office Hours", // Default type
   name: "", // Optional custom name
+});
+
+// Import dialogs state
+const importSectionsDialog = ref(false);
+const importUserSectionsDialog = ref(false);
+const importMeetingTimesDialog = ref(false);
+const importSectionsFile = ref(null);
+const importUserSectionsFile = ref(null);
+const importMeetingTimesFile = ref(null);
+const importSectionsResults = ref(null);
+const importUserSectionsResults = ref(null);
+const importMeetingTimesResults = ref(null);
+const importingSections = ref(false);
+const importingUserSections = ref(false);
+const importingMeetingTimes = ref(false);
+
+// Check if user is admin (role id=1)
+const isAdmin = computed(() => {
+  const user = Utils.getStore("user");
+  if (!user || !user.roles || !Array.isArray(user.roles)) {
+    return false;
+  }
+  return user.roles.some(role => role.id === 1);
 });
 
 // Color schemes for the two prefixes
@@ -71,58 +97,81 @@ const retrieveCourses = async () => {
     courses.value = [];
     uniquePrefixes.value = [];
     meetingTimes.value = [];
+    userSections.value = [];
     message.value = "Select a semester to view courses";
     return;
   }
 
   try {
+    // First, get all sections for the selected semester
     const params = {
       semesterId: selectedSemester.value,
     };
 
-    // Add userId filter if a user is selected
-    if (selectedUser.value) {
-      params.userId = selectedUser.value;
+    console.log("Fetching sections with params:", params);
+    const response = await SectionServices.getAllSections(params);
+    console.log("Sections response:", response);
+
+    let allSections = [];
+    if (response && response.data) {
+      allSections = response.data;
     }
 
-    console.log("Fetching courses with params:", params);
-    const response = await SectionServices.getAllSections(params);
-    console.log("Courses response:", response);
+    // If a user is selected, fetch their mapped sections and filter
+    if (selectedUser.value) {
+      try {
+        const userSectionsResponse = await UserSectionServices.getSectionsByUser(selectedUser.value);
+        userSections.value = userSectionsResponse.data || [];
+        console.log(`User has ${userSections.value.length} mapped section(s)`);
 
-    if (response && response.data) {
-      courses.value = response.data;
-      console.log(`Loaded ${courses.value.length} course(s)`);
+        // Filter sections to only show those mapped to the user
+        const userSectionIds = new Set(userSections.value.map(s => s.id));
+        courses.value = allSections.filter((section) => {
+          return userSectionIds.has(section.id);
+        });
 
-      // Extract unique course prefixes (first 4 characters)
-      const prefixes = new Set();
-      courses.value.forEach((course) => {
-        if (course.courseNumber && course.courseNumber.length >= 4) {
-          prefixes.add(course.courseNumber.substring(0, 4).toUpperCase());
-        }
-      });
-      uniquePrefixes.value = Array.from(prefixes).sort();
+        console.log(`Filtered to ${courses.value.length} section(s) matching user's sections`);
+      } catch (e) {
+        console.error("Error loading user sections:", e);
+        // If error loading user sections, show all sections (fallback behavior)
+        courses.value = allSections;
+        userSections.value = [];
+      }
+    } else {
+      // No user selected, show all sections
+      courses.value = allSections;
+      userSections.value = [];
+    }
 
-      // If a prefix is selected or a user is selected, load meeting times
-      if (coursePrefix1.value || coursePrefix2.value || selectedUser.value) {
-        await loadMeetingTimes();
+    // Extract unique course prefixes (first 4 characters)
+    const prefixes = new Set();
+    courses.value.forEach((course) => {
+      if (course.courseNumber && course.courseNumber.length >= 4) {
+        prefixes.add(course.courseNumber.substring(0, 4).toUpperCase());
+      }
+    });
+    uniquePrefixes.value = Array.from(prefixes).sort();
+
+    // If a prefix is selected or a user is selected, load meeting times
+    if (coursePrefix1.value || coursePrefix2.value || selectedUser.value) {
+      await loadMeetingTimes();
+    } else {
+      // Update message when courses are loaded but no prefixes or user selected
+      if (courses.value.length > 0) {
+        message.value = `Loaded ${courses.value.length} course(s). Select course prefix(es) or a user to view schedule.`;
       } else {
-        // Update message when courses are loaded but no prefixes or user selected
-        if (courses.value.length > 0) {
-          message.value = `Loaded ${courses.value.length} course(s). Select course prefix(es) or a user to view schedule.`;
+        if (selectedUser.value) {
+          message.value = `No sections found for selected user in this semester.`;
         } else {
           message.value = `No courses found for the selected semester.`;
         }
       }
-    } else {
-      courses.value = [];
-      uniquePrefixes.value = [];
-      message.value = "No courses found for the selected semester.";
-      console.warn("No data in response:", response);
     }
   } catch (e) {
     console.error("Error loading courses:", e);
     courses.value = [];
     uniquePrefixes.value = [];
+    userSections.value = [];
     message.value = e.response?.data?.message || "Error loading courses. Please check the browser console for details.";
   }
 };
@@ -949,6 +998,142 @@ const generatePDF = () => {
   doc.save(fileName);
 };
 
+// Import functions
+const openImportSectionsDialog = () => {
+  importSectionsDialog.value = true;
+  importSectionsFile.value = null;
+  importSectionsResults.value = null;
+};
+
+const closeImportSectionsDialog = () => {
+  importSectionsDialog.value = false;
+  importSectionsFile.value = null;
+  importSectionsResults.value = null;
+};
+
+const importSections = async () => {
+  if (!importSectionsFile.value) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+  if (!importSectionsFile.value.name.endsWith('.csv')) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+
+  importingSections.value = true;
+  importSectionsResults.value = null;
+
+  try {
+    // Pass null for semesterId since we'll use term_id from CSV
+    const response = await SectionServices.importSectionsCSV(importSectionsFile.value, null);
+    importSectionsResults.value = {
+      added: response.data.added || 0,
+      errors: response.data.errors || [],
+    };
+    message.value = `Import completed: ${importSectionsResults.value.added} sections added`;
+    await retrieveCourses();
+  } catch (e) {
+    console.error("Import sections error:", e);
+    const errorMessage = e.response?.data?.message || e.message || "Unknown error occurred";
+    message.value = `Error: ${errorMessage}`;
+    importSectionsResults.value = {
+      added: 0,
+      errors: [errorMessage],
+    };
+  } finally {
+    importingSections.value = false;
+  }
+};
+
+const openImportUserSectionsDialog = () => {
+  importUserSectionsDialog.value = true;
+  importUserSectionsFile.value = null;
+  importUserSectionsResults.value = null;
+};
+
+const closeImportUserSectionsDialog = () => {
+  importUserSectionsDialog.value = false;
+  importUserSectionsFile.value = null;
+  importUserSectionsResults.value = null;
+};
+
+const importUserSections = async () => {
+  if (!importUserSectionsFile.value) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+  if (!importUserSectionsFile.value.name.endsWith('.csv')) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+
+  importingUserSections.value = true;
+  importUserSectionsResults.value = null;
+
+  try {
+    const response = await UserSectionServices.importCSV(importUserSectionsFile.value);
+    importUserSectionsResults.value = {
+      added: response.data.added || 0,
+      errors: response.data.errors || [],
+    };
+    message.value = `Import completed: ${importUserSectionsResults.value.added} user-section assignments added`;
+    await retrieveCourses();
+  } catch (e) {
+    message.value = e.response?.data?.message || "Error importing user sections";
+    importUserSectionsResults.value = {
+      added: 0,
+      errors: [e.response?.data?.message || "Unknown error"],
+    };
+  } finally {
+    importingUserSections.value = false;
+  }
+};
+
+const openImportMeetingTimesDialog = () => {
+  importMeetingTimesDialog.value = true;
+  importMeetingTimesFile.value = null;
+  importMeetingTimesResults.value = null;
+};
+
+const closeImportMeetingTimesDialog = () => {
+  importMeetingTimesDialog.value = false;
+  importMeetingTimesFile.value = null;
+  importMeetingTimesResults.value = null;
+};
+
+const importMeetingTimes = async () => {
+  if (!importMeetingTimesFile.value) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+  if (!importMeetingTimesFile.value.name.endsWith('.csv')) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+
+  importingMeetingTimes.value = true;
+  importMeetingTimesResults.value = null;
+
+  try {
+    const response = await MeetingTimeServices.importMeetingTimesCSV(importMeetingTimesFile.value);
+    importMeetingTimesResults.value = {
+      added: response.data.added || 0,
+      errors: response.data.errors || [],
+    };
+    message.value = `Import completed: ${importMeetingTimesResults.value.added} meeting times added`;
+    await retrieveCourses();
+  } catch (e) {
+    message.value = e.response?.data?.message || "Error importing meeting times";
+    importMeetingTimesResults.value = {
+      added: 0,
+      errors: [e.response?.data?.message || "Unknown error"],
+    };
+  } finally {
+    importingMeetingTimes.value = false;
+  }
+};
+
 onMounted(() => {
   retrieveSemesters();
   retrieveUsers();
@@ -962,6 +1147,33 @@ onMounted(() => {
         <v-toolbar-title>Course Schedule</v-toolbar-title>
       </v-toolbar>
       <br />
+
+      <!-- Import Buttons Row (Admin only) -->
+      <v-card v-if="isAdmin" class="mb-4">
+        <v-card-title>Import Data</v-card-title>
+        <v-card-text>
+          <v-row>
+            <v-col cols="12" md="4">
+              <v-btn color="primary" block @click="openImportSectionsDialog">
+                <v-icon left>mdi-upload</v-icon>
+                Import Sections
+              </v-btn>
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-btn color="primary" block @click="openImportUserSectionsDialog">
+                <v-icon left>mdi-upload</v-icon>
+                Import User Sections
+              </v-btn>
+            </v-col>
+            <v-col cols="12" md="4">
+              <v-btn color="primary" block @click="openImportMeetingTimesDialog">
+                <v-icon left>mdi-upload</v-icon>
+                Import Meeting Times
+              </v-btn>
+            </v-col>
+          </v-row>
+        </v-card-text>
+      </v-card>
 
       <v-card>
         <v-card-title>Select Semester, User, and Course Prefixes</v-card-title>
@@ -1332,6 +1544,141 @@ onMounted(() => {
               Cancel
             </v-btn>
             <v-btn color="primary" @click="generatePDF"> Generate PDF </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <!-- Import Sections Dialog -->
+      <v-dialog v-model="importSectionsDialog" max-width="600px">
+        <v-card>
+          <v-card-title>
+            <span class="text-h5">Import Sections</span>
+          </v-card-title>
+          <v-card-text>
+            <v-alert type="info" variant="tonal" class="mb-4">
+              <div class="text-body-2">
+                <strong>CSV file must contain columns:</strong> course_id (sectionCode), course_num (courseNumber), section_num (courseSection), long_name (courseDescription), term_id (semester name), account_id (accountId, optional).
+              </div>
+              <div class="text-body-2 mt-2">
+                The term_id column should contain the semester name (e.g., "Fall 2026", "Spring 2023"). The system will look up the semester by name to determine which semester to assign the section to.
+              </div>
+              <div class="text-body-2 mt-2">
+                If a section with the same semester, course number, and section number already exists, it will be skipped. New sections will be created for the semester specified in the term_id column.
+              </div>
+            </v-alert>
+            <v-file-input
+              v-model="importSectionsFile"
+              label="CSV File *"
+              accept=".csv"
+              required
+              prepend-icon="mdi-file-document"
+            ></v-file-input>
+            <v-alert v-if="importSectionsResults" type="success" class="mt-3">
+              Import completed: {{ importSectionsResults.added }} records added
+              <div v-if="importSectionsResults.errors && importSectionsResults.errors.length > 0" class="mt-2">
+                <strong>Errors:</strong>
+                <ul>
+                  <li v-for="(error, index) in importSectionsResults.errors" :key="index">{{ error }}</li>
+                </ul>
+              </div>
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn color="blue darken-1" text @click="closeImportSectionsDialog">
+              Close
+            </v-btn>
+            <v-btn color="blue darken-1" text :disabled="importingSections" @click="importSections">
+              {{ importingSections ? "Importing..." : "Import" }}
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <!-- Import User Sections Dialog -->
+      <v-dialog v-model="importUserSectionsDialog" max-width="600px">
+        <v-card>
+          <v-card-title>
+            <span class="text-h5">Import User Sections</span>
+          </v-card-title>
+          <v-card-text>
+            <v-alert type="info" variant="tonal" class="mb-4">
+              <div class="text-body-2">
+                <strong>CSV file must contain columns:</strong> course_id (sectionCode), user_id (userId).
+              </div>
+              <div class="text-body-2 mt-2">
+                The system will look up the section by sectionCode and assign it to the user. If a section is not found or the user-section assignment already exists, the record will be skipped.
+              </div>
+            </v-alert>
+            <v-file-input
+              v-model="importUserSectionsFile"
+              label="CSV File *"
+              accept=".csv"
+              required
+              prepend-icon="mdi-file-document"
+            ></v-file-input>
+            <v-alert v-if="importUserSectionsResults" type="success" class="mt-3">
+              Import completed: {{ importUserSectionsResults.added }} records added
+              <div v-if="importUserSectionsResults.errors && importUserSectionsResults.errors.length > 0" class="mt-2">
+                <strong>Errors:</strong>
+                <ul>
+                  <li v-for="(error, index) in importUserSectionsResults.errors" :key="index">{{ error }}</li>
+                </ul>
+              </div>
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn color="blue darken-1" text @click="closeImportUserSectionsDialog">
+              Close
+            </v-btn>
+            <v-btn color="blue darken-1" text :disabled="importingUserSections" @click="importUserSections">
+              {{ importingUserSections ? "Importing..." : "Import" }}
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <!-- Import Meeting Times Dialog -->
+      <v-dialog v-model="importMeetingTimesDialog" max-width="600px">
+        <v-card>
+          <v-card-title>
+            <span class="text-h5">Import Meeting Times</span>
+          </v-card-title>
+          <v-card-text>
+            <v-alert type="info" variant="tonal" class="mb-4">
+              <div class="text-body-2">
+                <strong>CSV file must contain columns:</strong> section_code (sectionCode), monday, tuesday, wednesday, thursday, friday, saturday, sunday (all as integer 1 or 0), start_time, end_time.
+              </div>
+              <div class="text-body-2 mt-2">
+                The system will look up the section by sectionCode and create meeting times. If a section is not found or a duplicate meeting time exists, the record will be skipped.
+              </div>
+            </v-alert>
+            <v-file-input
+              v-model="importMeetingTimesFile"
+              label="CSV File *"
+              accept=".csv"
+              required
+              prepend-icon="mdi-file-document"
+            ></v-file-input>
+            <v-alert v-if="importMeetingTimesResults" type="success" class="mt-3">
+              Import completed: {{ importMeetingTimesResults.added }} records added
+              <div v-if="importMeetingTimesResults.errors && importMeetingTimesResults.errors.length > 0" class="mt-2">
+                <strong>Errors:</strong>
+                <ul>
+                  <li v-for="(error, index) in importMeetingTimesResults.errors" :key="index">{{ error }}</li>
+                </ul>
+              </div>
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn color="blue darken-1" text @click="closeImportMeetingTimesDialog">
+              Close
+            </v-btn>
+            <v-btn color="blue darken-1" text :disabled="importingMeetingTimes" @click="importMeetingTimes">
+              {{ importingMeetingTimes ? "Importing..." : "Import" }}
+            </v-btn>
           </v-card-actions>
         </v-card>
       </v-dialog>

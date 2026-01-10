@@ -3,6 +3,7 @@ import SectionServices from "../services/sectionServices";
 import SemesterServices from "../services/semesterServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
 import UserServices from "../services/userServices";
+import UserSectionServices from "../services/userSectionServices";
 import { ref, onMounted } from "vue";
 
 const courses = ref([]);
@@ -175,7 +176,7 @@ const exportAssignedCourses = async () => {
   }
 };
 
-const retrieveCourses = () => {
+const retrieveCourses = async () => {
   if (!selectedSemester.value) {
     courses.value = [];
     totalSections.value = 0;
@@ -185,37 +186,45 @@ const retrieveCourses = () => {
     return;
   }
 
-  const params = { semesterId: selectedSemester.value };
-  if (selectedFaculty.value) {
-    params.userId = selectedFaculty.value;
-  }
+  try {
+    // Get all sections for the semester
+    const params = { semesterId: selectedSemester.value };
+    const allSectionsResponse = await SectionServices.getSectionsWithCount(params);
+    let allSections = allSectionsResponse.data || [];
 
-  SectionServices.getSectionsWithCount(params)
-    .then((response) => {
-      courses.value = response.data.sort((a, b) => {
-        // Sort by courseNumber first, then by courseSection in ascending order
-        const courseNumberCompare = a.courseNumber.localeCompare(
-          b.courseNumber,
-          undefined,
-          {
-            numeric: true,
-            sensitivity: "base",
-          }
-        );
-        if (courseNumberCompare !== 0) {
-          return courseNumberCompare;
-        }
-        // If courseNumbers are the same, sort by courseSection
-        return a.courseSection.localeCompare(b.courseSection, undefined, {
+    // If faculty is selected, filter sections using user_sections join table
+    if (selectedFaculty.value) {
+      const userSectionsResponse = await UserSectionServices.getSectionsByUser(selectedFaculty.value);
+      const userSections = userSectionsResponse.data || [];
+      const userSectionIds = new Set(userSections.map(s => s.id));
+      
+      // Filter to only sections assigned to this faculty
+      allSections = allSections.filter(s => userSectionIds.has(s.id));
+    }
+
+    courses.value = allSections.sort((a, b) => {
+      // Sort by courseNumber first, then by courseSection in ascending order
+      const courseNumberCompare = a.courseNumber.localeCompare(
+        b.courseNumber,
+        undefined,
+        {
           numeric: true,
           sensitivity: "base",
-        });
+        }
+      );
+      if (courseNumberCompare !== 0) {
+        return courseNumberCompare;
+      }
+      // If courseNumbers are the same, sort by courseSection
+      return a.courseSection.localeCompare(b.courseSection, undefined, {
+        numeric: true,
+        sensitivity: "base",
       });
-      calculateStats();
-    })
-    .catch((e) => {
-      message.value = e.response?.data?.message || "Error loading courses";
     });
+    calculateStats();
+  } catch (e) {
+    message.value = e.response?.data?.message || "Error loading courses";
+  }
 };
 
 const calculateStats = async () => {
@@ -228,15 +237,19 @@ const calculateStats = async () => {
   }
 
   try {
-    // Build params for sections query based on selected filters
+    // Get sections for the selected semester (and faculty if selected)
     const sectionParams = { semesterId: selectedSemester.value };
+    const allSectionsResponse = await SectionServices.getAllSections(sectionParams);
+    let allSections = allSectionsResponse.data || [];
+
+    // If faculty is selected, filter sections using user_sections join table
     if (selectedFaculty.value) {
-      sectionParams.userId = selectedFaculty.value;
+      const userSectionsResponse = await UserSectionServices.getSectionsByUser(selectedFaculty.value);
+      const userSections = userSectionsResponse.data || [];
+      const userSectionIds = new Set(userSections.map(s => s.id));
+      allSections = allSections.filter(s => userSectionIds.has(s.id));
     }
 
-    // Get sections for the selected semester (and faculty if selected)
-    const sectionsResponse = await SectionServices.getAllSections(sectionParams);
-    const allSections = sectionsResponse.data || [];
     totalSections.value = allSections.length;
 
     // Get all assignments for sections in this semester
@@ -256,24 +269,28 @@ const calculateStats = async () => {
       facultyWithAssignments.value = hasAssignments ? 1 : 0;
       facultyWithNoAssignments.value = hasAssignments ? 0 : 1;
     } else {
-      // Get all sections for the semester (without faculty filter) to calculate this stat
-      const allTermSectionsResponse = await SectionServices.getAllSections({ semesterId: selectedSemester.value });
-      const allTermSections = allTermSectionsResponse.data || [];
+      // Get all sections for the semester to calculate this stat
+      const allTermSections = allSections;
       
-      // Get unique faculty IDs from all sections in the semester
-      const facultyIds = [...new Set(allTermSections.map(s => s.userId))];
+      // Get all user_sections for sections in this semester to find faculty
+      const allSectionIds = allTermSections.map(s => s.id);
+      const allUserSectionsResponse = await UserSectionServices.getAll();
+      const allUserSections = allUserSectionsResponse.data || [];
+      
+      // Filter user_sections to only those for sections in this semester
+      const semesterUserSections = allUserSections.filter(us => allSectionIds.includes(us.sectionId));
+      
+      // Get unique faculty IDs from user_sections
+      const facultyIds = [...new Set(semesterUserSections.map(us => us.userId))];
       
       // Get section IDs that have assignments
-      const allSectionIds = allTermSections.map(s => s.id);
       const allTermAssignments = allAssignments.filter(ac => allSectionIds.includes(ac.sectionId));
       const sectionIdsWithAssignments = [...new Set(allTermAssignments.map(ac => ac.sectionId))];
       
       // Find faculty who have at least one section with assignments
-      const facultyWithAssignmentsSet = new Set(
-        allTermSections
-          .filter(s => sectionIdsWithAssignments.includes(s.id))
-          .map(s => s.userId)
-      );
+      // Get user_sections for sections that have assignments
+      const userSectionsWithAssignments = semesterUserSections.filter(us => sectionIdsWithAssignments.includes(us.sectionId));
+      const facultyWithAssignmentsSet = new Set(userSectionsWithAssignments.map(us => us.userId));
       
       // Faculty with assignments = count of unique faculty who have at least one assignment
       facultyWithAssignments.value = facultyWithAssignmentsSet.size;
@@ -392,7 +409,7 @@ onMounted(() => {
               <th class="text-left">Course Number</th>
               <th class="text-left">Section</th>
               <th class="text-left">Description</th>
-              <th class="text-left">Faculty</th>
+              <th class="text-left">Status</th>
               <th class="text-left">Assignment Count</th>
             </tr>
           </thead>
@@ -401,8 +418,8 @@ onMounted(() => {
               <td>{{ course.courseNumber }}</td>
               <td>{{ course.courseSection }}</td>
               <td>{{ course.courseDescription }}</td>
-              <td>{{ course.user?.fName }} {{ course.user?.lName }}</td>
-              <td>{{ course.assignmentCount || 0 }}</td>
+              <td>{{ course.assignedCourse ? "Assigned" : "Not Assigned" }}</td>
+              <td>{{ course.assignedCourse ? 1 : 0 }}</td>
             </tr>
           </tbody>
         </v-table>

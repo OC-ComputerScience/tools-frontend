@@ -26,8 +26,13 @@ const apiClient = axios.create({
       if (token != null && token != "") authHeader = "Bearer " + token;
       headers["Authorization"] = authHeader;
     }
+    // If data is FormData, don't transform it - let axios handle it
+    if (data instanceof FormData) {
+      // Remove Content-Type header to let browser set it with boundary
+      delete headers["Content-Type"];
+      return data;
+    }
     // If data is null, undefined, or already a string, return it as-is
-    // This handles FormData and other non-JSON data
     if (data == null || typeof data === "string") {
       return data;
     }

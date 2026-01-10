@@ -3,6 +3,7 @@ import { ref, onMounted } from "vue";
 import SectionServices from "../services/sectionServices";
 import SemesterServices from "../services/semesterServices";
 import UserServices from "../services/userServices";
+import UserSectionServices from "../services/userSectionServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
 import Utils from "../config/utils.js";
 
@@ -79,23 +80,31 @@ const retrieveStats = () => {
     });
 };
 
-const loadCoursesWithCount = () => {
+const loadCoursesWithCount = async () => {
   if (!selectedSemester.value) return;
 
-  const params = { semesterId: selectedSemester.value };
-  // Only add userId if a user is explicitly selected (not null/undefined/empty string)
-  if (
-    selectedUser.value !== null &&
-    selectedUser.value !== undefined &&
-    selectedUser.value !== "" &&
-    selectedUser.value !== 0
-  ) {
-    params.userId = selectedUser.value;
-  }
+  try {
+    // Get all sections for the semester
+    const params = { semesterId: selectedSemester.value };
+    const allSectionsResponse = await SectionServices.getSectionsWithCount(params);
+    let allSections = allSectionsResponse.data || [];
 
-  SectionServices.getSectionsWithCount(params)
-    .then((response) => {
-      coursesWithCount.value = response.data
+    // If user is selected, filter sections using user_sections join table
+    if (
+      selectedUser.value !== null &&
+      selectedUser.value !== undefined &&
+      selectedUser.value !== "" &&
+      selectedUser.value !== 0
+    ) {
+      const userSectionsResponse = await UserSectionServices.getSectionsByUser(selectedUser.value);
+      const userSections = userSectionsResponse.data || [];
+      const userSectionIds = new Set(userSections.map(s => s.id));
+      
+      // Filter to only sections assigned to this user
+      allSections = allSections.filter(s => userSectionIds.has(s.id));
+    }
+
+    coursesWithCount.value = allSections
         .map((course) => {
           // Initialize assignment-related properties
           if (!course.availableSemesters) {
@@ -131,11 +140,10 @@ const loadCoursesWithCount = () => {
             sensitivity: "base",
           });
         });
-      // Don't update totalCourses here - it's already set from all terms in retrieveStats
-    })
-    .catch((e) => {
-      message.value = e.response?.data?.message || "Error loading courses";
-    });
+    // Don't update totalCourses here - it's already set from all terms in retrieveStats
+  } catch (e) {
+    message.value = e.response?.data?.message || "Error loading courses";
+  }
 };
 
 // Helper function to check if a semester started in the past
