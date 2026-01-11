@@ -1075,14 +1075,20 @@ const importUserSections = async () => {
     const response = await UserSectionServices.importCSV(importUserSectionsFile.value);
     importUserSectionsResults.value = {
       added: response.data.added || 0,
+      skipped: response.data.skipped || 0,
       errors: response.data.errors || [],
     };
-    message.value = `Import completed: ${importUserSectionsResults.value.added} user-section assignments added`;
+    let statusMessage = `Import completed: ${importUserSectionsResults.value.added} user-section assignments added`;
+    if (importUserSectionsResults.value.skipped > 0) {
+      statusMessage += `, ${importUserSectionsResults.value.skipped} skipped`;
+    }
+    message.value = statusMessage;
     await retrieveCourses();
   } catch (e) {
     message.value = e.response?.data?.message || "Error importing user sections";
     importUserSectionsResults.value = {
       added: 0,
+      skipped: 0,
       errors: [e.response?.data?.message || "Unknown error"],
     };
   } finally {
@@ -1557,7 +1563,7 @@ onMounted(() => {
           <v-card-text>
             <v-alert type="info" variant="tonal" class="mb-4">
               <div class="text-body-2">
-                <strong>CSV file must contain columns:</strong> course_id (sectionCode), course_num (courseNumber), section_num (courseSection), long_name (courseDescription), term_id (semester name), account_id (accountId, optional).
+                <strong>CSV file must contain columns:</strong> course_id (sectionCode), short_name (courseNumber and courseSection will be parsed from this), long_name (courseDescription), term_id (semester name), account_id (accountId, optional). Course number is extracted from first 9 characters of short_name, and section number from position 11 onwards.
               </div>
               <div class="text-body-2 mt-2">
                 The term_id column should contain the semester name (e.g., "Fall 2026", "Spring 2023"). The system will look up the semester by name to determine which semester to assign the section to.
@@ -1604,10 +1610,13 @@ onMounted(() => {
           <v-card-text>
             <v-alert type="info" variant="tonal" class="mb-4">
               <div class="text-body-2">
-                <strong>CSV file must contain columns:</strong> course_id (sectionCode), user_id (userId).
+                <strong>CSV file must contain columns:</strong> course_id (sectionCode), user_id (userId), role.
               </div>
               <div class="text-body-2 mt-2">
-                The system will look up the section by sectionCode and assign it to the user. If a section is not found or the user-section assignment already exists, the record will be skipped.
+                The system will look up the section by sectionCode and assign it to the user. Only records with role="teacher" will be imported. Records with other roles will be skipped.
+              </div>
+              <div class="text-body-2 mt-2">
+                If a section is not found or the user-section assignment already exists, the record will be skipped.
               </div>
             </v-alert>
             <v-file-input
@@ -1619,6 +1628,9 @@ onMounted(() => {
             ></v-file-input>
             <v-alert v-if="importUserSectionsResults" type="success" class="mt-3">
               Import completed: {{ importUserSectionsResults.added }} records added
+              <div v-if="importUserSectionsResults.skipped > 0">
+                {{ importUserSectionsResults.skipped }} records skipped (role is not "teacher")
+              </div>
               <div v-if="importUserSectionsResults.errors && importUserSectionsResults.errors.length > 0" class="mt-2">
                 <strong>Errors:</strong>
                 <ul>

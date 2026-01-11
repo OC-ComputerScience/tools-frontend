@@ -21,6 +21,12 @@ const semesterNumbers = ref([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]); // Common 
 const hide100AndAbove = ref(true); // Filter out sections with section numbers 100 and greater (default: checked)
 const hiddenSectionIds = ref(new Set()); // Track hidden section IDs
 
+// Import dialog state
+const importDialog = ref(false);
+const importFile = ref(null);
+const importResults = ref(null);
+const importing = ref(false);
+
 // Color palette for different course prefixes
 const prefixColors = [
   { background: "#e3f2fd", border: "#2196f3" }, // Blue
@@ -569,6 +575,57 @@ onMounted(() => {
   retrieveSemesters();
   retrieveMajors();
 });
+
+// Import functions
+const openImportDialog = () => {
+  importDialog.value = true;
+  importFile.value = null;
+  importResults.value = null;
+};
+
+const closeImportDialog = () => {
+  importDialog.value = false;
+  importFile.value = null;
+  importResults.value = null;
+};
+
+const importSemesterPlans = async () => {
+  if (!importFile.value) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+  if (!importFile.value.name.endsWith('.csv')) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+
+  importing.value = true;
+  importResults.value = null;
+
+  try {
+    const response = await SemesterPlanServices.importCSV(importFile.value);
+    importResults.value = {
+      added: response.data.added || 0,
+      errors: response.data.errors || [],
+    };
+    message.value = `Import completed: ${importResults.value.added} semester plans added`;
+    
+    // Refresh the semester plans if a major and semester number are selected
+    if (selectedMajor.value && selectedSemesterNumber.value) {
+      await retrieveSemesterPlans();
+    }
+  } catch (e) {
+    console.error("Import semester plans error:", e);
+    const errorMessage = e.response?.data?.message || e.message || "Unknown error occurred";
+    message.value = `Error: ${errorMessage}`;
+    importResults.value = {
+      added: 0,
+      errors: [errorMessage],
+    };
+  } finally {
+    importing.value = false;
+  }
+};
 </script>
 
 <template>
@@ -576,6 +633,10 @@ onMounted(() => {
     <v-container>
       <v-toolbar>
         <v-toolbar-title>Semester Plan Schedule</v-toolbar-title>
+        <v-spacer></v-spacer>
+        <v-btn color="primary" @click="openImportDialog">
+          Import Semester Plans
+        </v-btn>
       </v-toolbar>
       <br />
 
@@ -824,6 +885,53 @@ onMounted(() => {
           </div>
         </v-card-text>
       </v-card>
+
+      <!-- Import Semester Plans Dialog -->
+      <v-dialog v-model="importDialog" max-width="600px">
+        <v-card>
+          <v-card-title>
+            <span class="text-h5">Import Semester Plans</span>
+          </v-card-title>
+          <v-card-text>
+            <v-alert type="info" variant="tonal" class="mb-4">
+              <div class="text-body-2">
+                <strong>CSV file must contain columns:</strong> major_code, course_number, semester_number.
+              </div>
+              <div class="text-body-2 mt-2">
+                The system will look up the major by major_code and the course by course_number (format: CODE-NUMBER). If a major or course is not found, an error will be displayed for that row.
+              </div>
+              <div class="text-body-2 mt-2">
+                If a semester plan with the same major, semester number, and course already exists, the record will be skipped.
+              </div>
+            </v-alert>
+            <v-file-input
+              v-model="importFile"
+              label="CSV File *"
+              accept=".csv"
+              required
+              prepend-icon="mdi-file-document"
+            ></v-file-input>
+            <v-alert v-if="importResults" type="success" class="mt-3">
+              Import completed: {{ importResults.added }} records added
+              <div v-if="importResults.errors && importResults.errors.length > 0" class="mt-2">
+                <strong>Errors:</strong>
+                <ul>
+                  <li v-for="(error, index) in importResults.errors" :key="index">{{ error }}</li>
+                </ul>
+              </div>
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn color="blue darken-1" text @click="closeImportDialog">
+              Close
+            </v-btn>
+            <v-btn color="blue darken-1" text :disabled="importing" @click="importSemesterPlans">
+              {{ importing ? "Importing..." : "Import" }}
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
     </v-container>
   </div>
 </template>
