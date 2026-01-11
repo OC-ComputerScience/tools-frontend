@@ -138,9 +138,14 @@ const importUsers = async () => {
     importResults.value = {
       added: response.data.added || 0,
       updated: response.data.updated || 0,
+      skipped: response.data.skipped || 0,
       errors: response.data.errors || [],
     };
-    message.value = `Import completed: ${importResults.value.added} added, ${importResults.value.updated} updated`;
+    let statusMessage = `Import completed: ${importResults.value.added} added, ${importResults.value.updated} updated`;
+    if (importResults.value.skipped > 0) {
+      statusMessage += `, ${importResults.value.skipped} skipped`;
+    }
+    message.value = statusMessage;
     
     // Refresh user list
     await retrieveUsers();
@@ -149,6 +154,7 @@ const importUsers = async () => {
     importResults.value = {
       added: 0,
       updated: 0,
+      skipped: 0,
       errors: [e.response?.data?.message || "Unknown error"],
     };
   } finally {
@@ -297,11 +303,14 @@ onMounted(() => {
           <v-card-text>
             <div class="mb-4">
               <p class="text-body-2">
-                CSV file must contain columns: <strong>id</strong>, <strong>fname</strong> (or firstName), 
-                <strong>lname</strong> (or lastName), <strong>email</strong>
+                CSV file must contain columns: <strong>user_id</strong> (or id), <strong>first_name</strong> (or fname/firstName), 
+                <strong>last_name</strong> (or lname/lastName), <strong>email</strong>
               </p>
               <p class="text-body-2 text-caption mt-2">
-                If id exists, the user will be updated. If id doesn't exist or is empty, a new user will be created.
+                If user_id exists, the user will be updated. If user_id doesn't exist or is empty, a new user will be created.
+              </p>
+              <p class="text-body-2 text-caption mt-2">
+                <strong>Note:</strong> Records with email addresses containing "@eagles.oc.edu" will be skipped.
               </p>
             </div>
             
@@ -318,6 +327,7 @@ onMounted(() => {
               <v-alert type="success" variant="tonal" class="mb-2">
                 <div><strong>Users Added:</strong> {{ importResults.added }}</div>
                 <div><strong>Users Updated:</strong> {{ importResults.updated }}</div>
+                <div v-if="importResults.skipped > 0"><strong>Users Skipped:</strong> {{ importResults.skipped }} (emails containing @eagles.oc.edu)</div>
               </v-alert>
               
               <v-alert v-if="importResults.errors && importResults.errors.length > 0" type="warning" variant="tonal">

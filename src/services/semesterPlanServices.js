@@ -16,6 +16,11 @@ export default {
   deleteSemesterPlan(id) {
     return apiClient.delete(`semesterPlans/${id}`);
   },
+  importCSV(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.post("semesterPlans/import", formData);
+  },
 };
 
 

@@ -216,27 +216,44 @@ const loadAvailableSemesters = (course) => {
     });
 };
 
-const loadCoursesForSemester = (course, semesterId) => {
+const loadCoursesForSemester = async (course, semesterId) => {
   if (!semesterId) {
     course.availableCourses = [];
     return;
   }
 
-  SectionServices.getAllSections({ semesterId: semesterId })
-    .then((response) => {
-      // Filter courses to only show those matching the current course's courseNumber
-      // Transform items to include a title property for display
-      course.availableCourses = response.data
-        .filter((c) => c.courseNumber === course.courseNumber)
-        .map((c) => ({
-          ...c,
-          title: `${c.courseNumber} - Section ${c.courseSection}: ${c.courseDescription}`,
-        }));
-      course.selectedCourseForAssignment = null;
-    })
-    .catch(() => {
+  try {
+    console.log(`Loading courses for semester ${semesterId}, filtering by courseNumber: ${course.courseNumber}`);
+    const response = await SectionServices.getAllSections({ semesterId: semesterId });
+    console.log(`Received ${response.data?.length || 0} sections from API`);
+    
+    if (!response.data || !Array.isArray(response.data)) {
+      console.error("Invalid response data format:", response);
       course.availableCourses = [];
-    });
+      return;
+    }
+
+    // Filter courses to only show those matching the current course's courseNumber
+    // Transform items to include a title property for display
+    const matchingCourses = response.data.filter((c) => c.courseNumber === course.courseNumber);
+    console.log(`Filtered to ${matchingCourses.length} courses matching courseNumber: ${course.courseNumber}`);
+    console.log(`Available courseNumbers in semester:`, [...new Set(response.data.map(c => c.courseNumber))]);
+    
+    course.availableCourses = matchingCourses.map((c) => ({
+      ...c,
+      title: `${c.courseNumber} - Section ${c.courseSection}: ${c.courseDescription || 'No description'}`,
+    }));
+    course.selectedCourseForAssignment = null;
+    
+    if (course.availableCourses.length === 0 && response.data.length > 0) {
+      console.warn(`No courses found matching courseNumber "${course.courseNumber}". Available course numbers:`, 
+        [...new Set(response.data.map(c => c.courseNumber))]);
+    }
+  } catch (error) {
+    console.error("Error loading courses for semester:", error);
+    course.availableCourses = [];
+    message.value = `Error loading courses: ${error.response?.data?.message || error.message || "Unknown error"}`;
+  }
 };
 
 const assignCourse = async (course) => {
