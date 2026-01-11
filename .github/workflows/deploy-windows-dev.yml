@@ -14,6 +14,7 @@ jobs:
       VITE_APP_API_URL: ${{secrets.VITE_APP_API_URL}}
       VITE_APP_CLIENT_URL: ${{secrets.VITE_APP_CLIENT_URL}}
       VITE_APP_CLIENT_SECRET: ${{secrets.VITE_APP_CLIENT_SECRET}}
+      VITE_APP_PORT : ${{secrets.VITE_APP_PORT}}
       APP_ENV: production
     steps:
       - uses: actions/checkout@v4
