@@ -67,20 +67,20 @@ const selectedCourseIds = ref({});
 const headers = [
   { title: "Course\nNumber", key: "courseNumber", width: "80px" },
   { title: "Course\nDescription", key: "courseDescription", width: "150px" },
-  { title: "Course\nHours", key: "courseHours", width: "60px" },
+  { title: "Hours", key: "courseHours", width: "60px" },
+  { title: "Grade", key: "grade", width: "60px" },
   {
-    title: "University\nCourse\nNumber",
+    title: "Univ\nCourse\nNumber",
     key: "universityCourse.courseNumber",
     width: "80px",
   },
   {
-    title: "University\nCourse",
+    title: "Univ\nCourse",
     key: "universityCourse.courseName",
     width: "120px",
   },
   { title: "Course\nSelection", key: "courseSelection", width: "350px" },
   { title: "Semester", key: "semester.name", width: "80px" },
-  { title: "Grade", key: "grade", width: "60px" },
   { title: "Status", key: "status", width: "80px" },
   { title: "Status\nChanged\nDate", key: "statusChangedDate", width: "100px" },
   { title: "Actions", key: "actions", sortable: false, width: "80px" },
@@ -164,6 +164,14 @@ const deleteItem = (item) => {
       const index = transcriptCourses.value.indexOf(item);
       await TranscriptCourseServices.delete(item.id);
       transcriptCourses.value.splice(index, 1);
+      // Refresh transcript to get updated status
+      await UniversityTranscriptServices.get(transcriptId.value)
+        .then((response) => {
+          currentTranscript.value = response.data;
+        })
+        .catch((error) => {
+          console.error("Error refreshing transcript:", error);
+        });
     }
   );
 };
@@ -231,6 +239,15 @@ const approveAllCourses = async () => {
           await TranscriptCourseServices.update(course.id, updateData);
         }
 
+        // Refresh transcript to get updated status
+        await UniversityTranscriptServices.get(transcriptId.value)
+          .then((response) => {
+            currentTranscript.value = response.data;
+          })
+          .catch((error) => {
+            console.error("Error refreshing transcript:", error);
+          });
+        
         await initialize();
         showSnackbar(
           `${coursesToApprove.length} courses approved successfully`
@@ -251,7 +268,7 @@ const close = () => {
   editedIndex.value = -1;
 };
 
-const save = () => {
+const save = async () => {
   if (editedIndex.value > -1) {
     // Update
     const updateData = { ...editedItem.value };
@@ -264,7 +281,7 @@ const save = () => {
     }
 
     TranscriptCourseServices.update(editedItem.value.id, updateData)
-      .then((response) => {
+      .then(async (response) => {
         // Find the related data
         const universityTranscript = currentTranscript.value;
         const universityCourse = universityCourses.value.find(
@@ -285,6 +302,14 @@ const save = () => {
           semester: semester,
         };
         Object.assign(transcriptCourses.value[editedIndex.value], updatedItem);
+        // Refresh transcript to get updated status
+        await UniversityTranscriptServices.get(transcriptId.value)
+          .then((response) => {
+            currentTranscript.value = response.data;
+          })
+          .catch((error) => {
+            console.error("Error refreshing transcript:", error);
+          });
         close();
       })
       .catch((error) => {
@@ -297,7 +322,7 @@ const save = () => {
     createData.statusChangedDate = new Date().toISOString();
 
     TranscriptCourseServices.create(createData)
-      .then((response) => {
+      .then(async (response) => {
         // Find the related data
         const universityTranscript = currentTranscript.value;
         const universityCourse = universityCourses.value.find(
@@ -318,6 +343,14 @@ const save = () => {
           semester: semester,
         };
         transcriptCourses.value.push(newItem);
+        // Refresh transcript to get updated status
+        await UniversityTranscriptServices.get(transcriptId.value)
+          .then((response) => {
+            currentTranscript.value = response.data;
+          })
+          .catch((error) => {
+            console.error("Error refreshing transcript:", error);
+          });
         close();
       })
       .catch((error) => {
@@ -445,6 +478,15 @@ const matchCourses = async () => {
       }
     }
 
+    // Refresh transcript to get updated status
+    await UniversityTranscriptServices.get(transcriptId.value)
+      .then((response) => {
+        currentTranscript.value = response.data;
+      })
+      .catch((error) => {
+        console.error("Error refreshing transcript:", error);
+      });
+
     // Force a refresh of the data
     await initialize();
 
@@ -495,6 +537,14 @@ const approveItem = async (item) => {
           semester: item.semester,
         };
       }
+      // Refresh transcript to get updated status
+      await UniversityTranscriptServices.get(transcriptId.value)
+        .then((response) => {
+          currentTranscript.value = response.data;
+        })
+        .catch((error) => {
+          console.error("Error refreshing transcript:", error);
+        });
     }
   } catch (error) {
     console.error("Error toggling approval status:", error);
@@ -654,6 +704,15 @@ const addOcrCourses = async () => {
       }
     });
 
+    // Refresh transcript to get updated status
+    await UniversityTranscriptServices.get(transcriptId.value)
+      .then((response) => {
+        currentTranscript.value = response.data;
+      })
+      .catch((error) => {
+        console.error("Error refreshing transcript:", error);
+      });
+
     showSnackbar("Courses added successfully");
     ocrDialog.value = false;
   } catch (error) {
@@ -740,7 +799,9 @@ const getSelectedCourse = (item) => {
 // Get row props based on grade
 const getRowProps = ({ item }) => {
   const grade = item.grade?.toUpperCase()?.trim();
-  const isGreyRow = !['A', 'B', 'C', 'D'].includes(grade);
+  // Check if grade matches A, B, C, D with optional + or - (e.g., A+, A-, B, C+, D-), or P/P*
+  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*'];
+  const isGreyRow = !validGrades.includes(grade);
   return {
     class: {
       'grey-row': isGreyRow,
@@ -770,6 +831,16 @@ const saveSelectedCourses = async () => {
     }
 
     await Promise.all(updatePromises);
+    
+    // Refresh transcript to get updated status
+    await UniversityTranscriptServices.get(transcriptId.value)
+      .then((response) => {
+        currentTranscript.value = response.data;
+      })
+      .catch((error) => {
+        console.error("Error refreshing transcript:", error);
+      });
+    
     snackbarMessage.value = `Successfully updated ${updatePromises.length} transcript course(s)`;
     snackbarColor.value = "success";
     snackbar.value = true;
@@ -843,6 +914,21 @@ const viewTranscript = () => {
   }
 };
 
+const getStatusColor = (status) => {
+  switch (status) {
+    case "Not Process":
+      return "grey";
+    case "In-Progress":
+      return "orange";
+    case "Completed":
+      return "green";
+    case "Exported":
+      return "blue";
+    default:
+      return "grey";
+  }
+};
+
 onMounted(() => {
   initialize();
 });
@@ -854,16 +940,25 @@ onMounted(() => {
       <v-col cols="12">
         <h1>Transcript Courses</h1>
         <div v-if="currentTranscript" class="mb-4">
-          <div class="d-flex align-center">
+          <div class="d-flex align-center justify-space-between">
             <div>
               <h2>Transcript: {{ currentTranscript.OCIdNumber }}</h2>
               <p>Student: {{ currentTranscript.name }}</p>
               <p>University: {{ currentTranscript.university?.name }}</p>
             </div>
-            <v-btn color="primary" class="ml-4" @click="viewTranscript">
-              <v-icon left>mdi-file-pdf-box</v-icon>
-              View Transcript
-            </v-btn>
+            <div class="d-flex align-center">
+              <v-chip 
+                :color="getStatusColor(currentTranscript.status)" 
+                variant="flat"
+                class="mr-4"
+              >
+                Status: {{ currentTranscript.status || 'Not Process' }}
+              </v-chip>
+              <v-btn color="primary" @click="viewTranscript">
+                <v-icon left>mdi-file-pdf-box</v-icon>
+                View Transcript
+              </v-btn>
+            </div>
           </div>
         </div>
         <div class="d-flex align-center">

@@ -40,6 +40,7 @@ const headers = [
   { title: "OC ID Number", key: "OCIdNumber" },
   { title: "Student Name", key: "name" },
   { title: "University", key: "university.name" },
+  { title: "Status", key: "status" },
   { title: "Official", key: "official" },
   { title: "PDF", key: "pdf" },
   { title: "Actions", key: "actions", sortable: false },
@@ -240,6 +241,21 @@ const closeUploadDialog = () => {
   isDragging.value = false;
 };
 
+const getStatusColor = (status) => {
+  switch (status) {
+    case "Not Process":
+      return "grey";
+    case "In-Progress":
+      return "orange";
+    case "Completed":
+      return "green";
+    case "Exported":
+      return "blue";
+    default:
+      return "grey";
+  }
+};
+
 onMounted(() => {
   initialize();
 });
@@ -264,6 +280,15 @@ onMounted(() => {
           :loading="loading"
           class="elevation-1"
         >
+          <template v-slot:item.status="{ item }">
+            <v-chip
+              :color="getStatusColor(item.status)"
+              variant="flat"
+              size="small"
+            >
+              {{ item.status || "Not Process" }}
+            </v-chip>
+          </template>
           <template v-slot:item.official="{ item }">
             <v-icon :color="item.official ? 'green' : 'red'">
               {{ item.official ? "mdi-check-circle" : "mdi-close-circle" }}
