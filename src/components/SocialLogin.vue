@@ -12,6 +12,18 @@ const user = ref({});
 const loginWithGoogle = () => {
   window.handleCredentialResponse = handleCredentialResponse;
   const client = import.meta.env.VITE_APP_CLIENT_ID;
+  
+  if (!client) {
+    console.error("VITE_APP_CLIENT_ID is not set in the environment variables");
+    alert("Google OAuth configuration error: VITE_APP_CLIENT_ID is missing. Please check your .env file.");
+    return;
+  }
+  
+  if (!window.google || !window.google.accounts) {
+    console.error("Google accounts script not loaded");
+    return;
+  }
+  
   window.google.accounts.id.initialize({
     client_id: client,
     cancel_on_tap_outside: false,
