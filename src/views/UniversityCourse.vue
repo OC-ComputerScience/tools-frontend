@@ -199,6 +199,65 @@ const openDialog = () => {
   dialog.value = true;
 };
 
+const importDialog = ref(false);
+const importFile = ref(null);
+const importResults = ref(null);
+const importing = ref(false);
+
+const openImportDialog = () => {
+  importDialog.value = true;
+  importFile.value = null;
+  importResults.value = null;
+};
+
+const closeImportDialog = () => {
+  importDialog.value = false;
+  importFile.value = null;
+  importResults.value = null;
+};
+
+const importUniversityCourses = async () => {
+  if (!importFile.value) {
+    return;
+  }
+
+  importing.value = true;
+  importResults.value = null;
+
+  try {
+    const response = await UniversityCourseServices.importCSV(importFile.value);
+    importResults.value = response.data;
+    // Refresh the list
+    await initialize();
+  } catch (error) {
+    console.error("Error importing university courses:", error);
+    console.error("Error response:", error.response);
+    console.error("Error response data:", error.response?.data);
+
+    // Build detailed error message
+    let errorMessage = "Error importing CSV file";
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    // If there's a response but no specific message, include status and statusText
+    if (error.response && !error.response.data?.message) {
+      errorMessage = `Error ${error.response.status}: ${
+        error.response.statusText || errorMessage
+      }`;
+    }
+
+    importResults.value = {
+      added: 0,
+      errors: [errorMessage],
+    };
+  } finally {
+    importing.value = false;
+  }
+};
+
 onMounted(() => {
   initialize();
 });
@@ -208,10 +267,18 @@ onMounted(() => {
   <v-container>
     <v-row>
       <v-col cols="12">
-        <h1>University Courses</h1>
-        <v-btn color="primary" @click="openDialog()"
-          >Add University Course</v-btn
-        >
+        <div class="d-flex align-center">
+          <h1 class="mr-4">University Courses</h1>
+          <v-btn color="primary" @click="openDialog()" class="mr-2"
+            >Add University Course</v-btn
+          >
+          <v-btn
+            color="primary"
+            @click="openImportDialog"
+            prepend-icon="mdi-upload"
+            >Import University Courses</v-btn
+          >
+        </div>
       </v-col>
     </v-row>
 
@@ -248,7 +315,13 @@ onMounted(() => {
             }}
           </template>
           <template v-slot:[`item.course.number`]="{ item }">
-            {{ item.course ? (item.course.code ? `${item.course.code} ${item.course.number}` : item.course.number) : "N/A" }}
+            {{
+              item.course
+                ? item.course.code
+                  ? `${item.course.code} ${item.course.number}`
+                  : item.course.number
+                : "N/A"
+            }}
           </template>
           <template v-slot:[`item.course.description`]="{ item }">
             {{ item.course ? item.course.description : "N/A" }}
@@ -338,7 +411,8 @@ onMounted(() => {
                   v-model="editedItem.courseId"
                   :items="courses"
                   :item-title="
-                    (item) => `${item.code} ${item.number} - ${item.description}`
+                    (item) =>
+                      `${item.code} ${item.number} - ${item.description}`
                   "
                   item-value="id"
                   label="Course"
@@ -391,6 +465,72 @@ onMounted(() => {
             :disabled="!isFormValid"
             >Save</v-btn
           >
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Import CSV Dialog -->
+    <v-dialog v-model="importDialog" max-width="600px">
+      <v-card>
+        <v-card-title>
+          <span class="text-h5">Import University Courses</span>
+        </v-card-title>
+        <v-card-text>
+          <v-alert type="info" variant="tonal" class="mb-4">
+            <div class="text-body-2">
+              <strong>CSV file must contain columns:</strong> Transfer
+              Institution ID, Transfer Courses, Transfer Title, Transfer Cred,
+              OC Course.
+            </div>
+            <div class="text-body-2 mt-2">
+              The system will look up the university by Transfer Institution ID
+              (oc_university_id), and look up the OC course by course number to
+              get the courseId. If a university course with the same university
+              and course number already exists, it will be skipped.
+            </div>
+          </v-alert>
+          <v-file-input
+            v-model="importFile"
+            label="CSV File *"
+            accept=".csv"
+            required
+            prepend-icon="mdi-file-document"
+            variant="outlined"
+            show-size
+          ></v-file-input>
+          <div v-if="importResults" class="mt-4">
+            <v-alert type="success" variant="tonal" class="mb-2">
+              <div>
+                <strong>Records Added:</strong> {{ importResults.added }}
+              </div>
+            </v-alert>
+            <v-alert
+              v-if="importResults.errors && importResults.errors.length > 0"
+              type="warning"
+              variant="tonal"
+            >
+              <div><strong>Errors:</strong></div>
+              <ul class="mt-2">
+                <li v-for="(error, index) in importResults.errors" :key="index">
+                  {{ error }}
+                </li>
+              </ul>
+            </v-alert>
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="blue darken-1" text @click="closeImportDialog">
+            Close
+          </v-btn>
+          <v-btn
+            color="blue darken-1"
+            text
+            :disabled="importing || !importFile"
+            @click="importUniversityCourses"
+          >
+            {{ importing ? "Importing..." : "Import" }}
+          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>

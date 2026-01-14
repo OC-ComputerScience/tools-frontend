@@ -3,7 +3,7 @@ import SectionServices from "../services/sectionServices";
 import SemesterServices from "../services/semesterServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
 import Utils from "../config/utils.js";
-import { ref, onMounted, nextTick } from "vue";
+import { ref, onMounted, nextTick, computed } from "vue";
 
 const user = Utils.getStore("user");
 const courses = ref([]);
@@ -15,7 +15,12 @@ const assignmentDialogs = ref({});
 const retrieveSemesters = () => {
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = response.data;
+      // Sort semesters by startDate in descending order (newest first)
+      semesters.value = response.data.sort((a, b) => {
+        const dateA = new Date(a.startDate);
+        const dateB = new Date(b.startDate);
+        return dateB - dateA; // Descending order (newest first)
+      });
     })
     .catch((e) => {
       message.value = e.response?.data?.message || "Error loading semesters";
@@ -135,6 +140,29 @@ const loadAssignedCourse = (courseId) => {
     });
 };
 
+// Computed property to check assignment status
+const assignmentStatus = computed(() => {
+  if (!selectedSemester.value || courses.value.length === 0) {
+    return null; // No status if no semester selected or no courses
+  }
+
+  // Check if all courses are assigned
+  // A course is assigned if it has assignedCourse with either assignedSectionId or notAssignmentNeeded = true
+  const allAssigned = courses.value.every((course) => {
+    if (!course.assignedCourse) {
+      return false;
+    }
+    // Course is assigned if it has assignedSectionId OR notAssignmentNeeded is true
+    return (
+      (course.assignedCourse.assignedSectionId !== null &&
+        course.assignedCourse.assignedSectionId !== undefined) ||
+      course.assignedCourse.notAssignmentNeeded === true
+    );
+  });
+
+  return allAssigned ? "allAssigned" : "moreToAssign";
+});
+
 // Helper function to check if a semester started in the past
 const isSemesterInPast = (semester) => {
   if (!semester || !semester.startDate) return false;
@@ -204,10 +232,14 @@ const loadCoursesForSemester = async (course, semesterId) => {
   }
 
   try {
-    console.log(`Loading courses for semester ${semesterId}, filtering by courseNumber: ${course.courseNumber}`);
-    const response = await SectionServices.getAllSections({ semesterId: semesterId });
+    console.log(
+      `Loading courses for semester ${semesterId}, filtering by courseNumber: ${course.courseNumber}`
+    );
+    const response = await SectionServices.getAllSections({
+      semesterId: semesterId,
+    });
     console.log(`Received ${response.data?.length || 0} sections from API`);
-    
+
     if (!response.data || !Array.isArray(response.data)) {
       console.error("Invalid response data format:", response);
       course.availableCourses = [];
@@ -216,24 +248,56 @@ const loadCoursesForSemester = async (course, semesterId) => {
 
     // Filter courses to only show those matching the current course's courseNumber
     // Transform items to include a title property for display
-    const matchingCourses = response.data.filter((c) => c.courseNumber === course.courseNumber);
-    console.log(`Filtered to ${matchingCourses.length} courses matching courseNumber: ${course.courseNumber}`);
-    console.log(`Available courseNumbers in semester:`, [...new Set(response.data.map(c => c.courseNumber))]);
-    
+    const matchingCourses = response.data.filter(
+      (c) => c.courseNumber === course.courseNumber
+    );
+    console.log(
+      `Filtered to ${matchingCourses.length} courses matching courseNumber: ${course.courseNumber}`
+    );
+    console.log(`Available courseNumbers in semester:`, [
+      ...new Set(response.data.map((c) => c.courseNumber)),
+    ]);
+
     course.availableCourses = matchingCourses.map((c) => ({
       ...c,
-      title: `${c.courseNumber} - Section ${c.courseSection}: ${c.courseDescription || 'No description'}`,
+      title: `${c.courseNumber} - Section ${c.courseSection}: ${
+        c.courseDescription || "No description"
+      }`,
     }));
     course.selectedCourseForAssignment = null;
-    
+
     if (course.availableCourses.length === 0 && response.data.length > 0) {
-      console.warn(`No courses found matching courseNumber "${course.courseNumber}". Available course numbers:`, 
-        [...new Set(response.data.map(c => c.courseNumber))]);
+      console.warn(
+        `No courses found matching courseNumber "${course.courseNumber}". Available course numbers:`,
+        [...new Set(response.data.map((c) => c.courseNumber))]
+      );
     }
   } catch (error) {
     console.error("Error loading courses for semester:", error);
     course.availableCourses = [];
-    message.value = `Error loading courses: ${error.response?.data?.message || error.message || "Unknown error"}`;
+    message.value = `Error loading courses: ${
+      error.response?.data?.message || error.message || "Unknown error"
+    }`;
+  }
+};
+
+const markNoAssign = async (course) => {
+  const assignedCourse = {
+    sectionId: course.id,
+    notAssignmentNeeded: true,
+  };
+
+  try {
+    // Delete any existing assignment first
+    if (course.assignedCourse) {
+      await AssignedCourseServices.deleteAssignedCourseBySectionId(course.id);
+    }
+    await AssignedCourseServices.createAssignedCourse(assignedCourse);
+    message.value = "Course marked as 'Not Assignment Needed' successfully";
+    await retrieveCourses();
+  } catch (e) {
+    message.value = e.response?.data?.message || "Error marking course";
+    console.error("Error marking course:", e);
   }
 };
 
@@ -246,9 +310,14 @@ const assignCourse = async (course) => {
   const assignedCourse = {
     sectionId: course.id,
     assignedSectionId: course.selectedCourseForAssignment,
+    notAssignmentNeeded: false,
   };
 
   try {
+    // Delete any existing assignment first (including "No Assign" records)
+    if (course.assignedCourse) {
+      await AssignedCourseServices.deleteAssignedCourseBySectionId(course.id);
+    }
     // Wait for the assignment to be created
     await AssignedCourseServices.createAssignedCourse(assignedCourse);
 
@@ -303,10 +372,15 @@ onMounted(() => {
       <v-card class="mb-4">
         <v-card-text>
           <div class="text-body-1">
-            Canvas currently has courses loaded for Fall 2026 back to Spring
-            2023. First, for each course you teach in Fall 2026, assign a
-            Blackboard course in a previous semester that you want to have
-            imported into it.
+            We are able to export course from Blackboard and import them into
+            Canvas. The import works reasonbaly well but you will have to work
+            on it some to get the course set up fully in Canvas.
+          </div>
+          <br />
+          <div class="text-body-1">
+            For each course you teach in Fall 2026, assign a Blackboard course
+            from a previous semester that you want to have imported into it or
+            select that you don't need a Blackboard course imported.
           </div>
           <br />
           <div class="text-body-1">
@@ -333,6 +407,26 @@ onMounted(() => {
       </v-card>
 
       <br />
+
+      <!-- Assignment Status Display -->
+      <v-card v-if="selectedSemester && assignmentStatus !== null" class="mb-4">
+        <v-card-text>
+          <div style="display: flex; justify-content: center">
+            <div
+              class="text-h6"
+              :style="{
+                color: assignmentStatus === 'allAssigned' ? 'green' : 'orange',
+              }"
+            >
+              {{
+                assignmentStatus === "allAssigned"
+                  ? "All courses assigned"
+                  : "More courses to assign"
+              }}
+            </div>
+          </div>
+        </v-card-text>
+      </v-card>
 
       <v-card v-if="selectedSemester">
         <v-card-title>Canvas Courses for Selected Semester</v-card-title>
@@ -391,18 +485,26 @@ onMounted(() => {
                       </div>
                       <div v-if="course.assignedCourse">
                         <strong>Assigned To:</strong>
-                        {{
-                          course.assignedCourse.assignedSection?.courseNumber
-                        }}-{{
-                          course.assignedCourse.assignedSection?.courseSection
-                        }}
-                        <span
-                          v-if="course.assignedCourse.assignedSection?.semester"
-                        >
-                          ({{
-                            course.assignedCourse.assignedSection.semester.name
-                          }})</span
-                        >
+                        <span v-if="course.assignedCourse.notAssignmentNeeded">
+                          N/A (Not Assignment Needed)
+                        </span>
+                        <span v-else-if="course.assignedCourse.assignedSection">
+                          {{
+                            course.assignedCourse.assignedSection.courseNumber
+                          }}-{{
+                            course.assignedCourse.assignedSection.courseSection
+                          }}
+                          <span
+                            v-if="
+                              course.assignedCourse.assignedSection.semester
+                            "
+                          >
+                            ({{
+                              course.assignedCourse.assignedSection.semester
+                                .name
+                            }})</span
+                          >
+                        </span>
                       </div>
                     </div>
                   </v-tooltip>
@@ -411,13 +513,26 @@ onMounted(() => {
               <td>{{ course.courseSection }}</td>
               <td>{{ course.courseDescription }}</td>
               <td>
-                <span v-if="course.assignedCourse">
-                  {{ course.assignedCourse.assignedSection?.courseNumber }}-{{
-                    course.assignedCourse.assignedSection?.courseSection
-                  }}
-                  ({{ course.assignedCourse.assignedSection?.semester?.name }})
+                <span
+                  v-if="
+                    course.assignedCourse &&
+                    course.assignedCourse.notAssignmentNeeded
+                  "
+                >
+                  N/A
                 </span>
-                <span v-else>None</span>
+                <span
+                  v-else-if="
+                    course.assignedCourse &&
+                    course.assignedCourse.assignedSection
+                  "
+                >
+                  {{ course.assignedCourse.assignedSection.courseNumber }}-{{
+                    course.assignedCourse.assignedSection.courseSection
+                  }}
+                  ({{ course.assignedCourse.assignedSection.semester?.name }})
+                </span>
+                <span v-else>Not Assigned</span>
               </td>
               <td>
                 <v-btn
@@ -430,6 +545,18 @@ onMounted(() => {
                   @click="openAssignmentDialog(course)"
                 >
                   {{ course.assignedCourse ? "Change" : "Assign" }}
+                </v-btn>
+                <v-btn
+                  small
+                  color="grey"
+                  class="ml-2"
+                  :disabled="
+                    course.assignedCourse &&
+                    isSemesterInPast(getCourseSemester(course))
+                  "
+                  @click="markNoAssign(course)"
+                >
+                  No Assign
                 </v-btn>
                 <v-btn
                   v-if="course.assignedCourse"
@@ -504,6 +631,7 @@ onMounted(() => {
             <v-btn text @click="assignmentDialogs[course.id] = false"
               >Cancel</v-btn
             >
+            <v-btn color="grey" @click="markNoAssign(course)">No Assign</v-btn>
             <v-btn color="primary" @click="assignCourse(course)">Assign</v-btn>
           </v-card-actions>
         </v-card>
