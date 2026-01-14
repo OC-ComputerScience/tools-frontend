@@ -92,6 +92,26 @@ const formTitle = computed(() => {
     : "Edit Transcript Course";
 });
 
+const totalHours = computed(() => {
+  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*'];
+  return transcriptCourses.value.reduce(
+    (total, course) => {
+      const grade = course.grade?.toUpperCase()?.trim();
+      const isPassing = validGrades.includes(grade);
+      return isPassing ? total + (parseFloat(course.courseHours) || 0) : total;
+    },
+    0
+  );
+});
+
+const sortedTranscriptCourses = computed(() => {
+  return [...transcriptCourses.value].sort((a, b) => {
+    const semesterA = a.semester?.name || '';
+    const semesterB = b.semester?.name || '';
+    return semesterA.localeCompare(semesterB);
+  });
+});
+
 const initialize = async () => {
   loading.value = true;
 
@@ -945,6 +965,8 @@ onMounted(() => {
               <h2>Transcript: {{ currentTranscript.OCIdNumber }}</h2>
               <p>Student: {{ currentTranscript.name }}</p>
               <p>University: {{ currentTranscript.university?.name }}</p>
+              <p><strong>Courses: {{ transcriptCourses.length }}</strong></p>
+              <p><strong>Total Hours: {{ totalHours }}</strong></p>
             </div>
             <div class="d-flex align-center">
               <v-chip 
@@ -1011,7 +1033,7 @@ onMounted(() => {
       <v-col cols="12">
         <v-data-table
           :headers="headers"
-          :items="transcriptCourses"
+          :items="sortedTranscriptCourses"
           :loading="loading"
           density="compact"
           class="elevation-1 compact-table"
