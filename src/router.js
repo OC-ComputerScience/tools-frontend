@@ -3,9 +3,19 @@ import { createRouter, createWebHistory } from "vue-router";
 import Login from "./views/Login.vue";
 import FacultyCoursesList from "./views/FacultyCoursesList.vue";
 import AdminDashboard from "./views/AdminDashboard.vue";
-import AdminTermsList from "./views/AdminTermsList.vue";
+import AdminImport from "./views/AdminImport.vue";
 import AdminUsersList from "./views/AdminUsersList.vue";
 import AdminCoursesList from "./views/AdminCoursesList.vue";
+import AdminRolesList from "./views/AdminRolesList.vue";
+import AdminMenuOptionsList from "./views/AdminMenuOptionsList.vue";
+import ScheduleView from "./views/ScheduleView.vue";
+import SemesterPlanView from "./views/SemesterPlanView.vue";
+import University from './views/University.vue';
+import UniversityCourse from './views/UniversityCourse.vue';
+import UniversityTranscript from './views/UniversityTranscript.vue';
+import TranscriptCourse from './views/TranscriptCourse.vue';
+import Semester from './views/Semester.vue';
+import Catalog from './views/Catalog.vue';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -22,14 +32,19 @@ const router = createRouter({
       component: FacultyCoursesList,
     },
     {
-      path: "/admin",
-      name: "adminDashboard",
+      path: "/dashboard",
+      name: "dashboard",
       component: AdminDashboard,
     },
     {
-      path: "/admin/terms",
-      name: "adminTerms",
-      component: AdminTermsList,
+      path: "/admin",
+      name: "adminDashboard",
+      redirect: { name: "dashboard" },
+    },
+    {
+      path: "/admin/import",
+      name: "adminImport",
+      component: AdminImport,
     },
     {
       path: "/admin/users",
@@ -41,6 +56,57 @@ const router = createRouter({
       name: "adminCourses",
       component: AdminCoursesList,
     },
+    {
+      path: "/admin/roles",
+      name: "adminRoles",
+      component: AdminRolesList,
+    },
+    {
+      path: "/admin/menu-options",
+      name: "adminMenuOptions",
+      component: AdminMenuOptionsList,
+    },
+    {
+      path: "/schedule",
+      name: "schedule",
+      component: ScheduleView,
+    },
+    {
+      path: "/semester-plan",
+      name: "semesterPlan",
+      component: SemesterPlanView,
+    },
+    {
+      path: '/universities',
+      name: 'Universities',
+      component: University
+    },
+    {
+      path: '/university-courses',
+      name: 'University Courses',
+      component: UniversityCourse
+    },
+    {
+      path: '/transcripts',
+      name: 'Transcripts',
+      component: UniversityTranscript
+    },
+    {
+      path: '/transcript-courses/:id',
+      name: 'Transcript Courses',
+      component: TranscriptCourse,
+      props: true
+    },
+    {
+      path: '/semesters',
+      name: 'Semesters',
+      component: Semester
+    },
+    {
+      path: '/catalogs',
+      name: 'Catalogs',
+      component: Catalog
+    }
   ],
 });
 

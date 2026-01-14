@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from "vue";
 import AuthServices from "../services/authServices";
-import Utils from "../config/utils.js";
+import Utils from "../utils/utils.js";
 import { useRouter } from "vue-router";
 
 const router = useRouter();
@@ -12,6 +12,7 @@ const user = ref({});
 const loginWithGoogle = () => {
   window.handleCredentialResponse = handleCredentialResponse;
   const client = import.meta.env.VITE_APP_CLIENT_ID;
+  console.log(client);
   window.google.accounts.id.initialize({
     client_id: client,
     cancel_on_tap_outside: false,
@@ -37,9 +38,7 @@ const handleCredentialResponse = async (response) => {
       Utils.setStore("user", user.value);
       fName.value = user.value.fName;
       lName.value = user.value.lName;
-      
-      // Redirect to dashboard
-      router.push({ name: "dashboard" });
+      router.push({ name: "Home" });
     })
     .catch((error) => {
       console.log("error", error);
@@ -58,4 +57,3 @@ onMounted(() => {
     </v-row>
   </div>
 </template>
-

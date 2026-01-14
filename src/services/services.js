@@ -5,9 +5,9 @@ import router from "../router.js";
 
 var baseurl = "";
 if (import.meta.env.DEV) {
-  baseurl = "http://localhost/courseimport/";
+  baseurl = "http://localhost/tools/";
 } else {
-  baseurl = "/courseimport/";
+  baseurl = "/tools/";
 }
 
 const apiClient = axios.create({
@@ -26,21 +26,40 @@ const apiClient = axios.create({
       if (token != null && token != "") authHeader = "Bearer " + token;
       headers["Authorization"] = authHeader;
     }
+    // If data is FormData, don't transform it - let axios handle it
+    if (data instanceof FormData) {
+      // Remove Content-Type header to let browser set it with boundary
+      delete headers["Content-Type"];
+      return data;
+    }
+    // If data is null, undefined, or already a string, return it as-is
+    if (data == null || typeof data === "string") {
+      return data;
+    }
     return JSON.stringify(data);
   },
   transformResponse: function (data) {
-    data = JSON.parse(data);
-    if (data.message !== undefined && data.message.includes("Unauthorized")) {
-      AuthServices.logoutUser(Utils.getStore("user"))
-        .then((response) => {
-          Utils.removeItem("user");
-          router.push({ name: "login" });
-        })
-        .catch((error) => {
-          console.log("error", error);
-        });
+    // Handle null or empty response
+    if (!data || data === null || data === "") {
+      return data;
     }
-    return data;
+    try {
+      data = JSON.parse(data);
+      if (data && data.message !== undefined && data.message.includes("Unauthorized")) {
+        AuthServices.logoutUser(Utils.getStore("user"))
+          .then((response) => {
+            Utils.removeItem("user");
+            router.push({ name: "login" });
+          })
+          .catch((error) => {
+            console.log("error", error);
+          });
+      }
+      return data;
+    } catch (error) {
+      console.error("Error parsing response:", error);
+      return data;
+    }
   },
 });
 
