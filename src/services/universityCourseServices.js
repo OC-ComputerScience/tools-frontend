@@ -19,4 +19,13 @@ export default {
   delete(id) {
     return apiClient.delete(`/universityCourses/${id}`);
   },
+  importCSV(file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiClient.post(`/universityCourses/import`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+  },
 }; 
