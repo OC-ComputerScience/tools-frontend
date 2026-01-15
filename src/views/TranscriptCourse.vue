@@ -32,6 +32,7 @@ const editedItem = ref({
   semesterId: null,
   status: "UnMatched",
   grade: "",
+  permanentAssignment: false,
 });
 const defaultItem = {
   universityTranscriptId: null,
@@ -43,6 +44,7 @@ const defaultItem = {
   semesterId: null,
   status: "Pending",
   grade: "",
+  permanentAssignment: false,
 };
 
 const ocrDialog = ref(false);
@@ -63,8 +65,11 @@ const currentPdfUrl = ref("");
 
 // Track selected courses for each transcript course row
 const selectedCourseIds = ref({});
+// Track permanent assignment changes for each transcript course row
+const permanentAssignmentChanges = ref({});
 
 const headers = [
+  { title: "Semester", key: "semester.name", width: "80px" },
   { title: "Course\nNumber", key: "courseNumber", width: "80px" },
   { title: "Course\nDescription", key: "courseDescription", width: "150px" },
   { title: "Hours", key: "courseHours", width: "60px" },
@@ -80,9 +85,8 @@ const headers = [
     width: "120px",
   },
   { title: "Course\nSelection", key: "courseSelection", width: "350px" },
-  { title: "Semester", key: "semester.name", width: "80px" },
+  { title: "Permanent\nAssignment", key: "permanentAssignment", width: "100px" },
   { title: "Status", key: "status", width: "80px" },
-  { title: "Status\nChanged\nDate", key: "statusChangedDate", width: "100px" },
   { title: "Actions", key: "actions", sortable: false, width: "80px" },
 ];
 
@@ -135,6 +139,8 @@ const initialize = async () => {
           selectedCourseIds.value[tc.id] = tc.courseId;
         }
       });
+      // Clear any pending permanent assignment changes
+      permanentAssignmentChanges.value = {};
     })
     .catch((error) => {
       console.error("Error fetching transcript courses:", error);
@@ -806,6 +812,16 @@ const handleTableCourseSelect = (item, courseId) => {
     if (index !== -1 && transcriptCourses.value[index].status === "Matched") {
       transcriptCourses.value[index].status = "Unmatched";
     }
+    // Automatically uncheck permanent assignment when course is cleared
+    if (permanentAssignmentChanges.value && permanentAssignmentChanges.value[item.id] !== undefined) {
+      permanentAssignmentChanges.value[item.id] = false;
+      if (index !== -1) {
+        transcriptCourses.value[index].permanentAssignment = false;
+      }
+    } else if (index !== -1 && transcriptCourses.value[index].permanentAssignment) {
+      permanentAssignmentChanges.value[item.id] = false;
+      transcriptCourses.value[index].permanentAssignment = false;
+    }
   }
 };
 
@@ -830,12 +846,28 @@ const getRowProps = ({ item }) => {
   };
 };
 
-// Save all selected courses
+// Update permanent assignment (local only, doesn't save)
+const updatePermanentAssignment = (item, value) => {
+  if (!permanentAssignmentChanges.value) {
+    permanentAssignmentChanges.value = {};
+  }
+  permanentAssignmentChanges.value[item.id] = value;
+  // Update local display immediately
+  const index = transcriptCourses.value.findIndex(
+    (tc) => tc.id === item.id
+  );
+  if (index !== -1) {
+    transcriptCourses.value[index].permanentAssignment = value;
+  }
+};
+
+// Save all selected courses and permanent assignments
 const saveSelectedCourses = async () => {
   loading.value = true;
   try {
     const updatePromises = [];
     
+    // Save course selections
     for (const [transcriptCourseId, courseId] of Object.entries(selectedCourseIds.value)) {
       const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
       if (transcriptCourse && courseId) {
@@ -850,7 +882,25 @@ const saveSelectedCourses = async () => {
       }
     }
 
+    // Save permanent assignment changes
+    for (const [transcriptCourseId, permanentAssignment] of Object.entries(permanentAssignmentChanges.value)) {
+      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
+      if (transcriptCourse) {
+        const updateData = {
+          ...transcriptCourse,
+          permanentAssignment: permanentAssignment,
+        };
+        updatePromises.push(
+          TranscriptCourseServices.update(transcriptCourseId, updateData)
+        );
+      }
+    }
+
     await Promise.all(updatePromises);
+    
+    // Clear the tracked changes
+    selectedCourseIds.value = {};
+    permanentAssignmentChanges.value = {};
     
     // Refresh transcript to get updated status
     await UniversityTranscriptServices.get(transcriptId.value)
@@ -868,8 +918,8 @@ const saveSelectedCourses = async () => {
     // Reload the data
     await initialize();
   } catch (error) {
-    console.error("Error saving selected courses:", error);
-    snackbarMessage.value = "Error saving selected courses. Please try again.";
+    console.error("Error saving changes:", error);
+    snackbarMessage.value = "Error saving changes. Please try again.";
     snackbarColor.value = "error";
     snackbar.value = true;
   } finally {
@@ -1019,11 +1069,11 @@ onMounted(() => {
             color="primary"
             @click="saveSelectedCourses"
             :loading="loading"
-            :disabled="Object.keys(selectedCourseIds).length === 0"
+            :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0)"
             class="ml-2"
           >
             <v-icon left>mdi-content-save</v-icon>
-            Save Course Selections
+            Save Changes
           </v-btn>
         </div>
       </v-col>
@@ -1054,13 +1104,6 @@ onMounted(() => {
               mdi-pencil
             </v-icon>
             <v-icon small @click="deleteItem(item)"> mdi-delete </v-icon>
-          </template>
-          <template v-slot:[`item.statusChangedDate`]="{ item }">
-            {{
-              item.statusChangedDate
-                ? new Date(item.statusChangedDate).toLocaleDateString()
-                : "N/A"
-            }}
           </template>
           <template v-slot:[`item.courseSelection`]="{ item }">
             <v-autocomplete
@@ -1095,6 +1138,27 @@ onMounted(() => {
           </template>
           <template v-slot:[`item.universityCourse.courseName`]="{ item }">
             {{ item.universityCourse?.courseName || 'N/A' }}
+          </template>
+          <template v-slot:[`item.permanentAssignment`]="{ item }">
+            <div @click.stop @click.prevent="() => { 
+              if (!item || item.id === undefined) return;
+              const trackedValue = (permanentAssignmentChanges && permanentAssignmentChanges.value && permanentAssignmentChanges.value[item.id] !== undefined) 
+                ? permanentAssignmentChanges.value[item.id] 
+                : (item.permanentAssignment || false); 
+              const hasCourse = item.courseId || selectedCourseIds[item.id];
+              // Allow unchecking even without a course, but prevent checking without a course
+              if (!hasCourse && !trackedValue) return;
+              const newValue = !trackedValue; 
+              updatePermanentAssignment(item, newValue); 
+            }">
+              <v-checkbox
+                :model-value="(permanentAssignmentChanges && permanentAssignmentChanges.value && permanentAssignmentChanges.value[item.id] !== undefined) ? !!permanentAssignmentChanges.value[item.id] : !!(item && item.permanentAssignment)"
+                :disabled="!(item.courseId || selectedCourseIds[item.id])"
+                density="compact"
+                hide-details
+                readonly
+              ></v-checkbox>
+            </div>
           </template>
           <template v-slot:[`item.semester.name`]="{ item }">
             {{ item.semester?.name || 'N/A' }}
@@ -1293,6 +1357,12 @@ onMounted(() => {
                   label="Status"
                   required
                 ></v-select>
+              </v-col>
+              <v-col cols="12">
+                <v-checkbox
+                  v-model="editedItem.permanentAssignment"
+                  label="Permanent Assignment"
+                ></v-checkbox>
               </v-col>
             </v-row>
           </v-container>
