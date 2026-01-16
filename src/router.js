@@ -8,6 +8,7 @@ import AdminUsersList from "./views/AdminUsersList.vue";
 import AdminCoursesList from "./views/AdminCoursesList.vue";
 import AdminRolesList from "./views/AdminRolesList.vue";
 import AdminMenuOptionsList from "./views/AdminMenuOptionsList.vue";
+import AdminPrefixKeywordsList from "./views/AdminPrefixKeywordsList.vue";
 import ScheduleView from "./views/ScheduleView.vue";
 import SemesterPlanView from "./views/SemesterPlanView.vue";
 import University from './views/University.vue';
@@ -65,6 +66,11 @@ const router = createRouter({
       path: "/admin/menu-options",
       name: "adminMenuOptions",
       component: AdminMenuOptionsList,
+    },
+    {
+      path: "/admin/prefix-keywords",
+      name: "adminPrefixKeywords",
+      component: AdminPrefixKeywordsList,
     },
     {
       path: "/schedule",
