@@ -19,4 +19,7 @@ export default {
   delete(id) {
     return apiClient.delete(`/transcriptCourses/${id}`);
   },
+  matchGenericCourses(transcriptId) {
+    return apiClient.post(`/transcriptCourses/transcript/${transcriptId}/match-generics`);
+  },
 }; 

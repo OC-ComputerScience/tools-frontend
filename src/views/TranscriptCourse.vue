@@ -13,7 +13,11 @@ import PDFViewer from "./PDFViewer.vue";
 const route = useRoute();
 const transcriptId = computed(() => route.params.id);
 const dialog = ref(false);
-const loading = ref(false);
+const loading = ref(false); // General loading state (for initialize, etc.)
+const deleteAllLoading = ref(false);
+const approveAllLoading = ref(false);
+const matchGenericsLoading = ref(false);
+const saveChangesLoading = ref(false);
 const transcriptCourses = ref([]);
 const universityTranscripts = ref([]);
 const universityCourses = ref([]);
@@ -208,7 +212,7 @@ const deleteAllCourses = async () => {
     "Are you sure you want to delete all courses for this transcript?",
     async () => {
       try {
-        loading.value = true;
+        deleteAllLoading.value = true;
         const coursesToDelete = transcriptCourses.value.filter(
           (course) =>
             course.universityTranscriptId === parseInt(transcriptId.value)
@@ -224,7 +228,7 @@ const deleteAllCourses = async () => {
         console.error("Error deleting all courses:", error);
         showSnackbar("Error deleting courses. Please try again.", "error");
       } finally {
-        loading.value = false;
+        deleteAllLoading.value = false;
       }
     }
   );
@@ -236,7 +240,7 @@ const approveAllCourses = async () => {
     "Are you sure you want to approve all matched courses for this transcript?",
     async () => {
       try {
-        loading.value = true;
+        approveAllLoading.value = true;
         const coursesToApprove = transcriptCourses.value.filter(
           (course) =>
             course.universityTranscriptId === parseInt(transcriptId.value) &&
@@ -282,7 +286,7 @@ const approveAllCourses = async () => {
         console.error("Error approving all courses:", error);
         showSnackbar("Error approving courses. Please try again.", "error");
       } finally {
-        loading.value = false;
+        approveAllLoading.value = false;
       }
     }
   );
@@ -832,6 +836,22 @@ const getSelectedCourse = (item) => {
   return courses.value.find((c) => c.id === courseId);
 };
 
+// Check if a course is a generic course (pattern XXXX-001H or XXXX-003H)
+const isGenericCourse = (item) => {
+  // Check both selectedCourseIds and item.courseId
+  const courseId = selectedCourseIds.value[item.id] || item.courseId;
+  if (!courseId) return false;
+  
+  const course = courses.value.find((c) => c.id === courseId);
+  if (!course) return false;
+  
+  // Check if course number matches generic pattern: XXXX-001H or XXXX-003H (where H is hours 1-9)
+  // Pattern: prefix + "-" + "001" or "003" + single digit
+  const courseNumber = course.number || '';
+  const genericPattern = /^[A-Z]{2,4}-(001|003)[1-9]$/;
+  return genericPattern.test(courseNumber);
+};
+
 // Get row props based on grade
 const getRowProps = ({ item }) => {
   const grade = item.grade?.toUpperCase()?.trim();
@@ -863,7 +883,7 @@ const updatePermanentAssignment = (item, value) => {
 
 // Save all selected courses and permanent assignments
 const saveSelectedCourses = async () => {
-  loading.value = true;
+  saveChangesLoading.value = true;
   try {
     const updatePromises = [];
     
@@ -923,7 +943,7 @@ const saveSelectedCourses = async () => {
     snackbarColor.value = "error";
     snackbar.value = true;
   } finally {
-    loading.value = false;
+    saveChangesLoading.value = false;
   }
 };
 
@@ -999,6 +1019,51 @@ const getStatusColor = (status) => {
   }
 };
 
+// Match unmatched courses with generic courses using Gemini
+const matchGenericCourses = async () => {
+  if (!transcriptId.value) {
+    snackbarMessage.value = "No transcript selected";
+    snackbarColor.value = "error";
+    snackbar.value = true;
+    return;
+  }
+
+  matchGenericsLoading.value = true;
+  try {
+    const response = await TranscriptCourseServices.matchGenericCourses(transcriptId.value);
+    const matches = response.data.matches || [];
+
+    if (matches.length === 0) {
+      snackbarMessage.value = "No generic course matches found";
+      snackbarColor.value = "info";
+      snackbar.value = true;
+      loading.value = false;
+      return;
+    }
+
+    // Update selectedCourseIds with the matches
+    matches.forEach((match) => {
+      selectedCourseIds.value[match.transcriptCourseId] = match.courseId;
+      // Update the status to "Matched" for these courses
+      const index = transcriptCourses.value.findIndex(tc => tc.id === match.transcriptCourseId);
+      if (index !== -1) {
+        transcriptCourses.value[index].status = "Matched";
+      }
+    });
+
+    snackbarMessage.value = `Found ${matches.length} generic course match(es). Click "Save Changes" to apply.`;
+    snackbarColor.value = "success";
+    snackbar.value = true;
+  } catch (error) {
+    console.error("Error matching generic courses:", error);
+    snackbarMessage.value = error.response?.data?.message || "Error matching generic courses";
+    snackbarColor.value = "error";
+    snackbar.value = true;
+  } finally {
+    matchGenericsLoading.value = false;
+  }
+};
+
 onMounted(() => {
   initialize();
 });
@@ -1050,7 +1115,7 @@ onMounted(() => {
           <v-btn
             color="error"
             @click="deleteAllCourses"
-            :loading="loading"
+            :loading="deleteAllLoading"
             class="ml-2"
           >
             <v-icon left>mdi-delete-sweep</v-icon>
@@ -1059,16 +1124,26 @@ onMounted(() => {
           <v-btn
             color="success"
             @click="approveAllCourses"
-            :loading="loading"
+            :loading="approveAllLoading"
             class="ml-2"
           >
             <v-icon left>mdi-check-all</v-icon>
             Approve All
           </v-btn>
           <v-btn
+            color="secondary"
+            @click="matchGenericCourses"
+            :loading="matchGenericsLoading"
+            :disabled="!currentTranscript"
+            class="ml-2"
+          >
+            <v-icon left>mdi-auto-fix</v-icon>
+            Add Generics
+          </v-btn>
+          <v-btn
             color="primary"
             @click="saveSelectedCourses"
-            :loading="loading"
+            :loading="saveChangesLoading"
             :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0)"
             class="ml-2"
           >
@@ -1119,7 +1194,10 @@ onMounted(() => {
               variant="outlined"
               hide-details
               clearable
-              class="compact-autocomplete"
+              :class="[
+                'compact-autocomplete',
+                { 'generic-course': isGenericCourse(item) }
+              ]"
               @update:model-value="(value) => handleTableCourseSelect(item, value)"
               :filter="
                 (item, queryText) => {
@@ -1483,5 +1561,17 @@ onMounted(() => {
 .compact-autocomplete :deep(.v-field__input),
 .compact-autocomplete :deep(.v-select__selection) {
   font-size: 0.8rem !important;
+}
+
+.generic-course :deep(.v-field__input) {
+  background-color: #fff9c4 !important;
+}
+
+.generic-course :deep(.v-field) {
+  background-color: #fff9c4 !important;
+}
+
+.generic-course :deep(.v-field__outline) {
+  border-color: #fdd835 !important;
 }
 </style>
