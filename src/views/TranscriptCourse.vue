@@ -73,6 +73,9 @@ const selectedCourseIds = ref({});
 const permanentAssignmentChanges = ref({});
 // Track semester changes for courses that don't have a semester
 const semesterChanges = ref({});
+// Track courses that were auto-matched during import (not manually selected)
+// This is used to prevent yellow styling on auto-matched generic courses
+const autoMatchedCourses = ref(new Set());
 
 const headers = [
   { title: "Semester", key: "semester.name", width: "80px", sortable: false },
@@ -746,9 +749,14 @@ const addOcrCourses = async () => {
 
       transcriptCourses.value.push(newCourse);
       
-      // Initialize selected course ID if courseId is present
+      // Set selectedCourseIds during import so the dropdown shows the selected course
+      // However, we'll track which courses were auto-matched vs manually selected
+      // to control yellow styling
       if (newCourse.courseId) {
         selectedCourseIds.value[newCourse.id] = newCourse.courseId;
+        // Mark this as an auto-matched course (not manually selected)
+        // We'll check this in isGenericCourse to avoid yellow styling
+        autoMatchedCourses.value.add(newCourse.id);
       }
       
       return newCourse;
@@ -827,6 +835,8 @@ const showConfirmDialog = (title, message, action) => {
 const handleTableCourseSelect = (item, courseId) => {
   if (courseId) {
     selectedCourseIds.value[item.id] = courseId;
+    // Remove from auto-matched courses since user is now manually selecting
+    autoMatchedCourses.value.delete(item.id);
     // Update the status to "Matched" when a course is selected
     const index = transcriptCourses.value.findIndex(tc => tc.id === item.id);
     if (index !== -1) {
@@ -834,6 +844,8 @@ const handleTableCourseSelect = (item, courseId) => {
     }
   } else {
     delete selectedCourseIds.value[item.id];
+    // Remove from auto-matched courses since course is cleared
+    autoMatchedCourses.value.delete(item.id);
     // Optionally reset status when course is cleared
     const index = transcriptCourses.value.findIndex(tc => tc.id === item.id);
     if (index !== -1 && transcriptCourses.value[index].status === "Matched") {
@@ -860,10 +872,16 @@ const getSelectedCourse = (item) => {
 };
 
 // Check if a course is a generic course (pattern XXXX-001H or XXXX-003H)
+// Only show yellow if the course was explicitly selected (not auto-matched during import)
 const isGenericCourse = (item) => {
-  // Check both selectedCourseIds and item.courseId
-  const courseId = selectedCourseIds.value[item.id] || item.courseId;
+  // Check if course is in selectedCourseIds
+  const courseId = selectedCourseIds.value[item.id];
   if (!courseId) return false;
+  
+  // Don't show yellow if this course was auto-matched during import
+  if (autoMatchedCourses.value.has(item.id)) {
+    return false;
+  }
   
   const course = courses.value.find((c) => c.id === courseId);
   if (!course) return false;
@@ -1123,7 +1141,7 @@ onMounted(() => {
               <p>Student: {{ currentTranscript.name }}</p>
               <p>University: {{ currentTranscript.university?.name }}</p>
               <p><strong>Courses: {{ transcriptCourses.length }}</strong></p>
-              <p><strong>Total Hours: {{ totalHours }}</strong></p>
+              <p><strong>Total Passed Hours: {{ totalHours }}</strong></p>
             </div>
             <div class="d-flex align-center">
               <v-chip 
@@ -1327,7 +1345,7 @@ onMounted(() => {
                       <strong>University:</strong> {{ ocrResults.university }}
                     </div>
                     <div class="mt-2">
-                      <strong>Total Hours:</strong>
+                      <strong>Total Passed Hours:</strong>
                       {{ calculateTotalHours(ocrResults.courses) }}
                     </div>
                     <div>
