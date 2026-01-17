@@ -71,26 +71,30 @@ const currentPdfUrl = ref("");
 const selectedCourseIds = ref({});
 // Track permanent assignment changes for each transcript course row
 const permanentAssignmentChanges = ref({});
+// Track semester changes for courses that don't have a semester
+const semesterChanges = ref({});
 
 const headers = [
-  { title: "Semester", key: "semester.name", width: "80px" },
-  { title: "Course\nNumber", key: "courseNumber", width: "80px" },
-  { title: "Course\nDescription", key: "courseDescription", width: "150px" },
-  { title: "Hours", key: "courseHours", width: "60px" },
-  { title: "Grade", key: "grade", width: "60px" },
+  { title: "Semester", key: "semester.name", width: "80px", sortable: false },
+  { title: "Course\nNumber", key: "courseNumber", width: "80px", sortable: false },
+  { title: "Course\nDescription", key: "courseDescription", width: "150px", sortable: false },
+  { title: "Hours", key: "courseHours", width: "60px", sortable: false },
+  { title: "Grade", key: "grade", width: "60px", sortable: false },
   {
     title: "Univ\nCourse\nNumber",
     key: "universityCourse.courseNumber",
     width: "80px",
+    sortable: false,
   },
   {
     title: "Univ\nCourse",
     key: "universityCourse.courseName",
     width: "120px",
+    sortable: false,
   },
-  { title: "Course\nSelection", key: "courseSelection", width: "350px" },
-  { title: "Permanent\nAssignment", key: "permanentAssignment", width: "100px" },
-  { title: "Status", key: "status", width: "80px" },
+  { title: "Course\nSelection", key: "courseSelection", width: "350px", sortable: false },
+  { title: "Permanent\nAssignment", key: "permanentAssignment", width: "100px", sortable: false },
+  { title: "Status", key: "status", width: "80px", sortable: false },
   { title: "Actions", key: "actions", sortable: false, width: "80px" },
 ];
 
@@ -101,7 +105,7 @@ const formTitle = computed(() => {
 });
 
 const totalHours = computed(() => {
-  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*'];
+  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*', 'S'];
   return transcriptCourses.value.reduce(
     (total, course) => {
       const grade = course.grade?.toUpperCase()?.trim();
@@ -114,9 +118,17 @@ const totalHours = computed(() => {
 
 const sortedTranscriptCourses = computed(() => {
   return [...transcriptCourses.value].sort((a, b) => {
-    const semesterA = a.semester?.name || '';
-    const semesterB = b.semester?.name || '';
-    return semesterA.localeCompare(semesterB);
+    // Sort by semester start date (oldest first)
+    // If no semester, put at the end
+    if (!a.semester && !b.semester) return 0;
+    if (!a.semester) return 1; // a goes to end
+    if (!b.semester) return -1; // b goes to end
+    
+    const startDateA = a.semester.startDate ? new Date(a.semester.startDate) : new Date(0);
+    const startDateB = b.semester.startDate ? new Date(b.semester.startDate) : new Date(0);
+    
+    // Sort ascending (oldest first)
+    return startDateA - startDateB;
   });
 });
 
@@ -145,6 +157,7 @@ const initialize = async () => {
       });
       // Clear any pending permanent assignment changes
       permanentAssignmentChanges.value = {};
+      semesterChanges.value = {};
     })
     .catch((error) => {
       console.error("Error fetching transcript courses:", error);
@@ -689,8 +702,12 @@ const addOcrCourses = async () => {
 
   loading.value = true;
   try {
-    ocrResults.value.courses.forEach(async (course) => {
-      const matchingSemester = findClosestSemester(course.semester);
+    // Import all courses, including those without a semester/term
+    const importPromises = ocrResults.value.courses.map(async (course) => {
+      // Try to find matching semester, but allow null if not found or empty
+      const matchingSemester = (course.semester && course.semester.trim()) 
+        ? findClosestSemester(course.semester) 
+        : null;
       const matchingUniversityCourse = findMatchingUniversityCourse(
         course.courseNumber
       );
@@ -698,12 +715,13 @@ const addOcrCourses = async () => {
       console.log("matcht", matchingUniversityCourse);
 
       // Only set universityCourseId and courseId if we have a match
+      // Import even if semester is missing - semesterId can be null
       const courseData = {
         universityTranscriptId: currentTranscript.value.id,
         courseNumber: course.courseNumber,
         courseDescription: course.courseName,
         courseHours: course.hours,
-        semesterId: matchingSemester?.id || null,
+        semesterId: matchingSemester?.id || null, // Allow null for courses without a term
         universityCourseId: matchingUniversityCourse
           ? matchingUniversityCourse.id
           : null,
@@ -732,7 +750,12 @@ const addOcrCourses = async () => {
       if (newCourse.courseId) {
         selectedCourseIds.value[newCourse.id] = newCourse.courseId;
       }
+      
+      return newCourse;
     });
+    
+    // Wait for all courses to be imported (including those without terms)
+    await Promise.all(importPromises);
 
     // Refresh transcript to get updated status
     await UniversityTranscriptServices.get(transcriptId.value)
@@ -855,8 +878,8 @@ const isGenericCourse = (item) => {
 // Get row props based on grade
 const getRowProps = ({ item }) => {
   const grade = item.grade?.toUpperCase()?.trim();
-  // Check if grade matches A, B, C, D with optional + or - (e.g., A+, A-, B, C+, D-), or P/P*
-  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*'];
+  // Check if grade matches A, B, C, D with optional + or - (e.g., A+, A-, B, C+, D-), or P/P*/S
+  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*', 'S'];
   const isGreyRow = !validGrades.includes(grade);
   return {
     class: {
@@ -891,10 +914,12 @@ const saveSelectedCourses = async () => {
     for (const [transcriptCourseId, courseId] of Object.entries(selectedCourseIds.value)) {
       const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
       if (transcriptCourse && courseId) {
+        // Preserve existing status if it's "Approved", otherwise set to "Matched"
+        const newStatus = transcriptCourse.status === "Approved" ? "Approved" : "Matched";
         const updateData = {
           ...transcriptCourse,
           courseId: courseId,
-          status: "Matched", // Ensure status is set to Matched
+          status: newStatus,
         };
         updatePromises.push(
           TranscriptCourseServices.update(transcriptCourseId, updateData)
@@ -906,9 +931,25 @@ const saveSelectedCourses = async () => {
     for (const [transcriptCourseId, permanentAssignment] of Object.entries(permanentAssignmentChanges.value)) {
       const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
       if (transcriptCourse) {
+        // Preserve all existing data including status
         const updateData = {
           ...transcriptCourse,
           permanentAssignment: permanentAssignment,
+        };
+        updatePromises.push(
+          TranscriptCourseServices.update(transcriptCourseId, updateData)
+        );
+      }
+    }
+
+    // Save semester changes for courses without a semester
+    for (const [transcriptCourseId, semesterId] of Object.entries(semesterChanges.value)) {
+      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
+      if (transcriptCourse && semesterId) {
+        // Preserve all existing data including status
+        const updateData = {
+          ...transcriptCourse,
+          semesterId: semesterId,
         };
         updatePromises.push(
           TranscriptCourseServices.update(transcriptCourseId, updateData)
@@ -921,6 +962,7 @@ const saveSelectedCourses = async () => {
     // Clear the tracked changes
     selectedCourseIds.value = {};
     permanentAssignmentChanges.value = {};
+    semesterChanges.value = {};
     
     // Refresh transcript to get updated status
     await UniversityTranscriptServices.get(transcriptId.value)
@@ -1144,7 +1186,7 @@ onMounted(() => {
             color="primary"
             @click="saveSelectedCourses"
             :loading="saveChangesLoading"
-            :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0)"
+            :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0) && (!semesterChanges || Object.keys(semesterChanges.value || {}).length === 0)"
             class="ml-2"
           >
             <v-icon left>mdi-content-save</v-icon>
@@ -1239,7 +1281,22 @@ onMounted(() => {
             </div>
           </template>
           <template v-slot:[`item.semester.name`]="{ item }">
-            {{ item.semester?.name || 'N/A' }}
+            <div v-if="item.semester">
+              {{ item.semester.name }}
+            </div>
+            <v-select
+              v-else
+              :model-value="semesterChanges[item.id] || null"
+              :items="semesters"
+              item-title="name"
+              item-value="id"
+              density="compact"
+              variant="outlined"
+              hide-details
+              placeholder="Select Term"
+              @update:model-value="(value) => semesterChanges[item.id] = value"
+              style="min-width: 120px;"
+            ></v-select>
           </template>
         </v-data-table>
       </v-col>
