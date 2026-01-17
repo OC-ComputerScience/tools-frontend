@@ -69,8 +69,16 @@ const currentPdfUrl = ref("");
 
 // Track selected courses for each transcript course row
 const selectedCourseIds = ref({});
-// Track permanent assignment changes for each transcript course row
-const permanentAssignmentChanges = ref({});
+  // Track permanent assignment changes for each transcript course row
+  const permanentAssignmentChanges = ref({});
+  // Track semester changes for courses that don't have a semester
+  const semesterChanges = ref({});
+  // Track courses that were automatically matched during import (not manually selected)
+  // This is used to prevent yellow styling on auto-matched generic courses
+  const autoMatchedCourses = ref(new Set());
+  // Track the original auto-matched course ID for each transcript course
+  // Key: transcriptCourseId, Value: original auto-matched courseId
+  const originalAutoMatchedCourseIds = ref({});
 
 const headers = [
   { title: "Semester", key: "semester.name", width: "80px" },
@@ -113,12 +121,21 @@ const totalHours = computed(() => {
 });
 
 const sortedTranscriptCourses = computed(() => {
-  return [...transcriptCourses.value].sort((a, b) => {
-    const semesterA = a.semester?.name || '';
-    const semesterB = b.semester?.name || '';
-    return semesterA.localeCompare(semesterB);
+    return [...transcriptCourses.value].sort((a, b) => {
+      const semesterA = a.semester?.name || '';
+      const semesterB = b.semester?.name || '';
+      return semesterA.localeCompare(semesterB);
+    });
   });
-});
+
+  // Sort semesters by start date for dropdowns
+  const sortedSemesters = computed(() => {
+    return [...semesters.value].sort((a, b) => {
+      const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
+      const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
+      return dateA - dateB; // Sort ascending (oldest first)
+    });
+  });
 
 const initialize = async () => {
   loading.value = true;
@@ -141,6 +158,17 @@ const initialize = async () => {
       transcriptCourses.value.forEach((tc) => {
         if (tc.courseId) {
           selectedCourseIds.value[tc.id] = tc.courseId;
+          
+          // Check if this course was auto-matched from universityCourse lookup
+          // If it has both universityCourseId and courseId, and they match, it was auto-matched
+          if (tc.universityCourseId && tc.universityCourse && tc.universityCourse.course) {
+            const universityCourseMatchedId = tc.universityCourse.course.id;
+            // If the courseId matches the universityCourse's course, it was auto-matched
+            if (universityCourseMatchedId === tc.courseId) {
+              autoMatchedCourses.value.add(tc.id);
+              originalAutoMatchedCourseIds.value[tc.id] = tc.courseId;
+            }
+          }
         }
       });
       // Clear any pending permanent assignment changes
@@ -689,8 +717,12 @@ const addOcrCourses = async () => {
 
   loading.value = true;
   try {
-    ocrResults.value.courses.forEach(async (course) => {
-      const matchingSemester = findClosestSemester(course.semester);
+    // Import all courses, including those without semesters
+    const importPromises = ocrResults.value.courses.map(async (course) => {
+      // Try to find matching semester, but allow null if not found or empty
+      const matchingSemester = (course.semester && course.semester.trim()) 
+        ? findClosestSemester(course.semester) 
+        : null;
       const matchingUniversityCourse = findMatchingUniversityCourse(
         course.courseNumber
       );
@@ -698,12 +730,13 @@ const addOcrCourses = async () => {
       console.log("matcht", matchingUniversityCourse);
 
       // Only set universityCourseId and courseId if we have a match
+      // Import even if semester is missing - semesterId can be null
       const courseData = {
         universityTranscriptId: currentTranscript.value.id,
         courseNumber: course.courseNumber,
         courseDescription: course.courseName,
         courseHours: course.hours,
-        semesterId: matchingSemester?.id || null,
+        semesterId: matchingSemester?.id || null, // Allow null for courses without a term
         universityCourseId: matchingUniversityCourse
           ? matchingUniversityCourse.id
           : null,
@@ -728,11 +761,21 @@ const addOcrCourses = async () => {
 
       transcriptCourses.value.push(newCourse);
       
-      // Initialize selected course ID if courseId is present
+      // Initialize selected course ID if courseId is present (from automatic lookup/match)
       if (newCourse.courseId) {
         selectedCourseIds.value[newCourse.id] = newCourse.courseId;
+        // Mark this as an auto-matched course (not manually selected)
+        // This prevents yellow styling for generic courses that were automatically matched
+        autoMatchedCourses.value.add(newCourse.id);
+        // Store the original auto-matched course ID
+        originalAutoMatchedCourseIds.value[newCourse.id] = newCourse.courseId;
       }
+      
+      return newCourse;
     });
+    
+    // Wait for all courses to be imported (including those without terms)
+    await Promise.all(importPromises);
 
     // Refresh transcript to get updated status
     await UniversityTranscriptServices.get(transcriptId.value)
@@ -804,6 +847,16 @@ const showConfirmDialog = (title, message, action) => {
 const handleTableCourseSelect = (item, courseId) => {
   if (courseId) {
     selectedCourseIds.value[item.id] = courseId;
+    // Check if this course was originally auto-matched and if the selected course matches
+    const originalAutoMatchedCourseId = originalAutoMatchedCourseIds.value[item.id];
+    if (originalAutoMatchedCourseId && originalAutoMatchedCourseId !== courseId) {
+      // User selected a different course than the original auto-match, remove from auto-matched
+      autoMatchedCourses.value.delete(item.id);
+    } else if (!originalAutoMatchedCourseId) {
+      // Course was never auto-matched, remove from auto-matched if it was there
+      autoMatchedCourses.value.delete(item.id);
+    }
+    // If the selected course matches the original auto-matched course, keep it in autoMatchedCourses
     // Update the status to "Matched" when a course is selected
     const index = transcriptCourses.value.findIndex(tc => tc.id === item.id);
     if (index !== -1) {
@@ -811,6 +864,9 @@ const handleTableCourseSelect = (item, courseId) => {
     }
   } else {
     delete selectedCourseIds.value[item.id];
+    // Remove from auto-matched courses when course is cleared
+    autoMatchedCourses.value.delete(item.id);
+    delete originalAutoMatchedCourseIds.value[item.id];
     // Optionally reset status when course is cleared
     const index = transcriptCourses.value.findIndex(tc => tc.id === item.id);
     if (index !== -1 && transcriptCourses.value[index].status === "Matched") {
@@ -837,8 +893,10 @@ const getSelectedCourse = (item) => {
 };
 
 // Check if a course is a generic course (pattern XXXX-001H or XXXX-003H)
+// Only show yellow if the course was manually selected (not auto-matched during import)
+// And if manually selected, only show yellow if it's different from the original auto-matched course
 const isGenericCourse = (item) => {
-  // Check both selectedCourseIds and item.courseId
+  // Check both selectedCourseIds and item.courseId (prioritize selectedCourseIds for manual selections)
   const courseId = selectedCourseIds.value[item.id] || item.courseId;
   if (!courseId) return false;
   
@@ -849,7 +907,58 @@ const isGenericCourse = (item) => {
   // Pattern: prefix + "-" + "001" or "003" + single digit
   const courseNumber = course.number || '';
   const genericPattern = /^[A-Z]{2,4}-(001|003)[1-9]$/;
-  return genericPattern.test(courseNumber);
+  const isGeneric = genericPattern.test(courseNumber);
+  
+  if (!isGeneric) return false;
+  
+  // Check if this course was auto-matched (from lookup or import)
+  // If it was auto-matched and the selected course matches the original, don't show yellow
+  
+  // First, check if it's in our tracking (from import or initialization)
+  const originalAutoMatchedCourseId = originalAutoMatchedCourseIds.value[item.id];
+  if (originalAutoMatchedCourseId && originalAutoMatchedCourseId === courseId) {
+    // The selected course matches the original auto-matched course, don't show yellow
+    return false;
+  }
+  
+  // Second, check if the courseId matches what would be auto-matched from universityCourse lookup
+  // This handles cases where the course was auto-matched from the database but not tracked
+  // We check if: item has universityCourseId, has universityCourse with course, and that course.id matches the selected courseId
+  if (item.universityCourseId && item.universityCourse) {
+    // Get the course ID from the universityCourse relationship
+    const universityCourseMatchedId = item.universityCourse.course?.id || item.universityCourse.courseId;
+    // Also check if item.courseId itself matches (the stored courseId from the database)
+    const storedCourseId = item.courseId;
+    
+    // If the selected courseId matches either the universityCourse's course OR the stored courseId
+    // AND the stored courseId matches what would be looked up, then it was auto-matched
+    if ((universityCourseMatchedId === courseId) || (storedCourseId === courseId && storedCourseId === universityCourseMatchedId)) {
+      // This course matches what would be auto-matched from the universityCourse lookup
+      // Don't show yellow - it's effectively an auto-match
+      // Also store it in our tracking for future reference
+      if (!originalAutoMatchedCourseId) {
+        originalAutoMatchedCourseIds.value[item.id] = courseId;
+        autoMatchedCourses.value.add(item.id);
+      }
+      return false;
+    }
+  }
+  
+  // Third, check if item.courseId matches the current selection and if there's a universityCourseId
+  // This is a fallback for cases where the relationship might not be fully loaded
+  if (item.courseId === courseId && item.universityCourseId) {
+    // If there's a universityCourseId, it was likely auto-matched from lookup
+    // Don't show yellow if it matches the stored courseId
+    // Also store it in our tracking
+    if (!originalAutoMatchedCourseId) {
+      originalAutoMatchedCourseIds.value[item.id] = courseId;
+      autoMatchedCourses.value.add(item.id);
+    }
+    return false;
+  }
+  
+  // If there's no match with auto-matched courses, show yellow (it's a manually selected generic course)
+  return true;
 };
 
 // Get row props based on grade
@@ -891,10 +1000,12 @@ const saveSelectedCourses = async () => {
     for (const [transcriptCourseId, courseId] of Object.entries(selectedCourseIds.value)) {
       const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
       if (transcriptCourse && courseId) {
+        // Preserve existing status if it's "Approved", otherwise set to "Matched"
+        const newStatus = transcriptCourse.status === "Approved" ? "Approved" : "Matched";
         const updateData = {
           ...transcriptCourse,
           courseId: courseId,
-          status: "Matched", // Ensure status is set to Matched
+          status: newStatus,
         };
         updatePromises.push(
           TranscriptCourseServices.update(transcriptCourseId, updateData)
@@ -906,9 +1017,25 @@ const saveSelectedCourses = async () => {
     for (const [transcriptCourseId, permanentAssignment] of Object.entries(permanentAssignmentChanges.value)) {
       const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
       if (transcriptCourse) {
+        // Preserve all existing data including status
         const updateData = {
           ...transcriptCourse,
           permanentAssignment: permanentAssignment,
+        };
+        updatePromises.push(
+          TranscriptCourseServices.update(transcriptCourseId, updateData)
+        );
+      }
+    }
+
+    // Save semester changes for courses without a semester
+    for (const [transcriptCourseId, semesterId] of Object.entries(semesterChanges.value)) {
+      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
+      if (transcriptCourse && semesterId) {
+        // Preserve all existing data including status
+        const updateData = {
+          ...transcriptCourse,
+          semesterId: semesterId,
         };
         updatePromises.push(
           TranscriptCourseServices.update(transcriptCourseId, updateData)
@@ -921,6 +1048,7 @@ const saveSelectedCourses = async () => {
     // Clear the tracked changes
     selectedCourseIds.value = {};
     permanentAssignmentChanges.value = {};
+    semesterChanges.value = {};
     
     // Refresh transcript to get updated status
     await UniversityTranscriptServices.get(transcriptId.value)
@@ -1144,7 +1272,7 @@ onMounted(() => {
             color="primary"
             @click="saveSelectedCourses"
             :loading="saveChangesLoading"
-            :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0)"
+              :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0) && (!semesterChanges || Object.keys(semesterChanges.value || {}).length === 0)"
             class="ml-2"
           >
             <v-icon left>mdi-content-save</v-icon>
@@ -1194,6 +1322,7 @@ onMounted(() => {
               variant="outlined"
               hide-details
               clearable
+              :disabled="item.status === 'Approved'"
               :class="[
                 'compact-autocomplete',
                 { 'generic-course': isGenericCourse(item) }
@@ -1239,7 +1368,22 @@ onMounted(() => {
             </div>
           </template>
           <template v-slot:[`item.semester.name`]="{ item }">
-            {{ item.semester?.name || 'N/A' }}
+            <div v-if="item.semester">
+              {{ item.semester.name }}
+            </div>
+            <v-select
+              v-else
+              :model-value="semesterChanges[item.id] || null"
+              :items="sortedSemesters"
+              item-title="name"
+              item-value="id"
+              density="compact"
+              variant="outlined"
+              hide-details
+              placeholder="Select Term"
+              @update:model-value="(value) => semesterChanges[item.id] = value"
+              style="min-width: 120px;"
+            ></v-select>
           </template>
         </v-data-table>
       </v-col>
@@ -1415,7 +1559,7 @@ onMounted(() => {
               <v-col cols="12">
                 <v-select
                   v-model="editedItem.semesterId"
-                  :items="semesters"
+                  :items="sortedSemesters"
                   item-title="name"
                   item-value="id"
                   label="Semester"
