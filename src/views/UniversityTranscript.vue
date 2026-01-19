@@ -15,6 +15,31 @@ const currentPdfUrl = ref("");
 const loading = ref(false);
 const universityTranscripts = ref([]);
 const universities = ref([]);
+const ocIdNumberFilter = ref("");
+const statusFilter = ref("");
+const statusOptions = ["Not Process", "In-Progress", "Completed", "Exported"];
+const filteredTranscripts = computed(() => {
+  let filtered = universityTranscripts.value;
+  
+  // Filter by OC ID Number
+  if (ocIdNumberFilter.value) {
+    filtered = filtered.filter((transcript) =>
+      transcript.OCIdNumber
+        ?.toLowerCase()
+        .includes(ocIdNumberFilter.value.toLowerCase())
+    );
+  }
+  
+  // Filter by status
+  if (statusFilter.value) {
+    filtered = filtered.filter((transcript) => {
+      const transcriptStatus = transcript.status || "Not Process";
+      return transcriptStatus === statusFilter.value;
+    });
+  }
+  
+  return filtered;
+});
 const editedIndex = ref(-1);
 const editedItem = ref({
   OCIdNumber: "",
@@ -273,12 +298,31 @@ onMounted(() => {
       </v-toolbar>
       <br />
 
+      <v-row>
+        <v-col cols="12" sm="6" md="4">
+          <v-text-field
+            v-model="ocIdNumberFilter"
+            label="Search by OC Student ID Number"
+            prepend-icon="mdi-magnify"
+            clearable
+          ></v-text-field>
+        </v-col>
+        <v-col cols="12" sm="6" md="4">
+          <v-select
+            v-model="statusFilter"
+            :items="statusOptions"
+            label="Filter by Status"
+            clearable
+          ></v-select>
+        </v-col>
+      </v-row>
+
       <v-card>
         <v-card-title>University Transcripts</v-card-title>
         <v-card-text>
           <v-data-table
             :headers="headers"
-            :items="universityTranscripts"
+            :items="filteredTranscripts"
             :loading="loading"
           >
           <template v-slot:item.status="{ item }">
