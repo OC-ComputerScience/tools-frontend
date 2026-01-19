@@ -69,8 +69,16 @@ const currentPdfUrl = ref("");
 
 // Track selected courses for each transcript course row
 const selectedCourseIds = ref({});
-// Track permanent assignment changes for each transcript course row
-const permanentAssignmentChanges = ref({});
+  // Track permanent assignment changes for each transcript course row
+  const permanentAssignmentChanges = ref({});
+  // Track semester changes for courses that don't have a semester
+  const semesterChanges = ref({});
+  // Track courses that were automatically matched during import (not manually selected)
+  // This is used to prevent yellow styling on auto-matched generic courses
+  const autoMatchedCourses = ref(new Set());
+  // Track the original auto-matched course ID for each transcript course
+  // Key: transcriptCourseId, Value: original auto-matched courseId
+  const originalAutoMatchedCourseIds = ref({});
 
 const headers = [
   { title: "Semester", key: "semester.name", width: "80px" },
@@ -101,7 +109,7 @@ const formTitle = computed(() => {
 });
 
 const totalHours = computed(() => {
-  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*'];
+  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*', 'S'];
   return transcriptCourses.value.reduce(
     (total, course) => {
       const grade = course.grade?.toUpperCase()?.trim();
@@ -113,12 +121,33 @@ const totalHours = computed(() => {
 });
 
 const sortedTranscriptCourses = computed(() => {
-  return [...transcriptCourses.value].sort((a, b) => {
-    const semesterA = a.semester?.name || '';
-    const semesterB = b.semester?.name || '';
-    return semesterA.localeCompare(semesterB);
+    return [...transcriptCourses.value].sort((a, b) => {
+      // Null semesters go to the top
+      if (!a.semester && !b.semester) {
+        return 0; // Both null, maintain order
+      }
+      if (!a.semester) {
+        return -1; // a is null, comes first
+      }
+      if (!b.semester) {
+        return 1; // b is null, comes first
+      }
+      
+      // Both have semesters, sort by start date
+      const dateA = a.semester.startDate ? new Date(a.semester.startDate) : new Date(0);
+      const dateB = b.semester.startDate ? new Date(b.semester.startDate) : new Date(0);
+      return dateA - dateB; // Sort ascending (oldest first)
+    });
   });
-});
+
+  // Sort semesters by start date for dropdowns
+  const sortedSemesters = computed(() => {
+    return [...semesters.value].sort((a, b) => {
+      const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
+      const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
+      return dateA - dateB; // Sort ascending (oldest first)
+    });
+  });
 
 const initialize = async () => {
   loading.value = true;
@@ -141,6 +170,17 @@ const initialize = async () => {
       transcriptCourses.value.forEach((tc) => {
         if (tc.courseId) {
           selectedCourseIds.value[tc.id] = tc.courseId;
+          
+          // Check if this course was auto-matched from universityCourse lookup
+          // If it has both universityCourseId and courseId, and they match, it was auto-matched
+          if (tc.universityCourseId && tc.universityCourse && tc.universityCourse.course) {
+            const universityCourseMatchedId = tc.universityCourse.course.id;
+            // If the courseId matches the universityCourse's course, it was auto-matched
+            if (universityCourseMatchedId === tc.courseId) {
+              autoMatchedCourses.value.add(tc.id);
+              originalAutoMatchedCourseIds.value[tc.id] = tc.courseId;
+            }
+          }
         }
       });
       // Clear any pending permanent assignment changes
@@ -168,16 +208,16 @@ const initialize = async () => {
       console.error("Error fetching courses:", error);
     });
 
-  SemesterServices.getAll()
+  await SemesterServices.getAll()
     .then((response) => {
       semesters.value = response.data;
+      console.log(`Loaded ${semesters.value.length} semesters:`, semesters.value.map(s => s.name));
     })
     .catch((error) => {
       console.error("Error fetching semesters:", error);
-    })
-    .finally(() => {
-      loading.value = false;
     });
+  
+  loading.value = false;
 };
 
 const editItem = (item) => {
@@ -601,58 +641,230 @@ const processOCR = async () => {
 };
 
 const findClosestSemester = (courseSemester) => {
-  if (!courseSemester || !semesters.value.length) return null;
-
-  // Try both formats: "FALL 1983" and "1983 FALL"
-  let term, year;
-  const parts = courseSemester.split(" ");
-
-  if (parts.length === 2) {
-    // Check if first part is a year (4 digits)
-    if (/^\d{4}$/.test(parts[0])) {
-      // Format: "1983 FALL"
-      [year, term] = parts;
-    } else {
-      // Format: "FALL 1983"
-      [term, year] = parts;
-    }
-  } else {
+  console.log(`\n=== findClosestSemester START ===`);
+  console.log(`Input: "${courseSemester}"`);
+  console.log(`Available semesters count: ${semesters.value.length}`);
+  console.log(`Available semesters:`, semesters.value.map(s => s.name));
+  
+  if (!courseSemester) {
+    console.log(`Returning null: courseSemester is falsy`);
+    return null;
+  }
+  
+  if (!semesters.value.length) {
+    console.log(`Returning null: no semesters available`);
     return null;
   }
 
-  if (!year || !term) return null;
+  let term, year;
 
-  // Find semesters that match the year
-  const matchingYearSemesters = semesters.value.filter((s) =>
-    s.name.includes(year)
-  );
-  if (!matchingYearSemesters.length) return null;
+  // Try to extract year and term from various formats:
+  // "FALL 1983", "1983 FALL", "Fall 2022", "2022FA", "FA2022", "2025SP", "SP2025", etc.
+  
+  // First, try to extract 4-digit year (might be at start or end)
+  const yearMatch = courseSemester.match(/\b(\d{4})\b/);
+  if (yearMatch) {
+    year = yearMatch[1];
+  }
 
-  // Map full terms to their abbreviations
+  // Extract term (can be before or after year, or in formats like "2022FA")
+  const upperSemester = courseSemester.toUpperCase().trim();
+  
+  // Check for combined format: "2022FA", "FA2022", "2025SP", "SP2025", etc.
+  const combinedFormat = upperSemester.match(/^(\d{4})(FA|SP|SU|WI|FALL|SPRING|SUMMER|WINTER)$|^(FA|SP|SU|WI|FALL|SPRING|SUMMER|WINTER)(\d{4})$/);
+  if (combinedFormat) {
+    if (combinedFormat[1]) {
+      // Format: "2022FA" - year is first group, term is second
+      year = combinedFormat[1];
+      term = combinedFormat[2];
+    } else {
+      // Format: "FA2022" - term is third group, year is fourth
+      term = combinedFormat[3];
+      year = combinedFormat[4];
+    }
+  } else {
+    // Split format: "FALL 1983", "1983 FALL", "Fall 2022", etc.
+    const parts = courseSemester.trim().split(/\s+/);
+    
+    if (parts.length >= 2) {
+      // Check if first part is a year (4 digits)
+      if (/^\d{4}$/.test(parts[0])) {
+        // Format: "1983 FALL"
+        year = parts[0];
+        term = parts.slice(1).join(" "); // In case there are multiple words for term
+      } else {
+        // Format: "FALL 1983" or "Fall 2022"
+        // Find year (4 digits) in the parts
+        const yearPartIndex = parts.findIndex(p => /^\d{4}$/.test(p));
+        if (yearPartIndex !== -1) {
+          year = parts[yearPartIndex];
+          term = parts.slice(0, yearPartIndex).join(" ") || parts.slice(yearPartIndex + 1).join(" ");
+        } else {
+          // No 4-digit year found, use first part as term and last part as year (might be 2-digit)
+          term = parts[0];
+          // Try to extract year from any part
+          for (const part of parts) {
+            const yearCandidate = part.match(/\b(\d{2,4})\b/);
+            if (yearCandidate) {
+              // Convert 2-digit year to 4-digit (assuming 20xx if 2-digit)
+              if (yearCandidate[1].length === 2) {
+                year = "20" + yearCandidate[1];
+              } else {
+                year = yearCandidate[1];
+              }
+              break;
+            }
+          }
+        }
+      }
+    } else if (parts.length === 1) {
+      // Single part - might be format like "Fall2022" or "2022Fall"
+      const singleMatch = parts[0].match(/^(\d{4})(.+)$|^(.+)(\d{4})$/);
+      if (singleMatch) {
+        if (singleMatch[1]) {
+          year = singleMatch[1];
+          term = singleMatch[2];
+        } else {
+          term = singleMatch[3];
+          year = singleMatch[4];
+        }
+      }
+    }
+  }
+
+  console.log(`findClosestSemester: Extracted term="${term}", year="${year}"`);
+
+  if (!year) {
+    console.log(`findClosestSemester: Could not extract year from "${courseSemester}"`);
+    return null;
+  }
+
+  // Normalize term to standard abbreviations
   const termMap = {
     FALL: "FA",
     SPRING: "SP",
     SUMMER: "SU",
     WINTER: "WI",
   };
+  
+  // If term was extracted, normalize it
+  if (term) {
+    const upperTerm = term.toUpperCase().trim();
+    // Check if it's already an abbreviation
+    if (termMap[upperTerm]) {
+      term = termMap[upperTerm];
+    } else if (upperTerm.length > 2) {
+      // It's a full term name, convert to abbreviation
+      for (const [fullTerm, abbrev] of Object.entries(termMap)) {
+        if (upperTerm.includes(fullTerm) || fullTerm.includes(upperTerm)) {
+          term = abbrev;
+          break;
+        }
+      }
+    }
+  }
 
-  // Convert term to uppercase for comparison
-  const upperTerm = term ? term.toUpperCase() : "";
-
-  // Find the semester that matches both year and term (including abbreviations)
-  const exactMatch = matchingYearSemesters.find((s) => {
-    const semesterName = s.name ? s.name.toUpperCase() : "";
-    // Check for both full term and abbreviated term
-    return (
-      semesterName.includes(upperTerm) ||
-      (termMap[upperTerm] && semesterName.includes(termMap[upperTerm]))
-    );
+  // Find semesters that match the year - use word boundary to avoid partial matches
+  const yearPattern = new RegExp(`\\b${year}\\b`);
+  console.log(`Searching for year pattern: \\b${year}\\b`);
+  
+  const matchingYearSemesters = semesters.value.filter((s) => {
+    if (!s.name) return false;
+    const matches = yearPattern.test(s.name);
+    if (matches) {
+      console.log(`  ✓ Matches: "${s.name}"`);
+    }
+    return matches;
   });
+  
+  console.log(`Found ${matchingYearSemesters.length} semesters matching year "${year}"`);
+  console.log(`Matching semesters:`, matchingYearSemesters.map(s => `${s.name} (id: ${s.id})`));
 
-  if (exactMatch) return exactMatch;
+  if (!matchingYearSemesters.length) {
+    console.log(`ERROR: No semesters found for year "${year}"`);
+    console.log(`Trying case-insensitive search...`);
+    
+    // Try case-insensitive search
+    const yearPatternCI = new RegExp(year, 'i');
+    const matchingYearSemestersCI = semesters.value.filter((s) =>
+      s.name && yearPatternCI.test(s.name)
+    );
+    
+    if (matchingYearSemestersCI.length > 0) {
+      console.log(`Found ${matchingYearSemestersCI.length} semesters with case-insensitive match:`, matchingYearSemestersCI.map(s => s.name));
+      // Continue with case-insensitive matches
+      const allMatchingSemesters = matchingYearSemestersCI;
+      
+      // If we have a term, try to find exact match
+      if (term) {
+        const upperTerm = term.toUpperCase();
+        const exactMatch = allMatchingSemesters.find((s) => {
+          const semesterName = s.name ? s.name.toUpperCase() : "";
+          const matches = (
+            semesterName.includes(upperTerm) ||
+            (termMap[upperTerm] && semesterName.includes(termMap[upperTerm])) ||
+            Object.entries(termMap).some(([fullTerm, abbrev]) => 
+              (upperTerm === abbrev && semesterName.includes(abbrev)) ||
+              (upperTerm === fullTerm && semesterName.includes(fullTerm))
+            )
+          );
+          if (matches) {
+            console.log(`✓ Found exact match: "${s.name}" (id: ${s.id})`);
+          }
+          return matches;
+        });
+        
+        if (exactMatch) {
+          console.log(`=== findClosestSemester END (exact match) ===\n`);
+          return exactMatch;
+        }
+      }
+      
+      // Return first match if no exact term match
+      const fallback = allMatchingSemesters[0];
+      console.log(`Using fallback: "${fallback.name}" (id: ${fallback.id})`);
+      console.log(`=== findClosestSemester END (fallback) ===\n`);
+      return fallback;
+    }
+    
+    console.log(`=== findClosestSemester END (no matches) ===\n`);
+    return null;
+  }
+
+  // If we have a term, try to find exact match
+  if (term) {
+    const upperTerm = term.toUpperCase();
+    const exactMatch = matchingYearSemesters.find((s) => {
+      const semesterName = s.name ? s.name.toUpperCase() : "";
+      // Check for both full term and abbreviated term
+      return (
+        semesterName.includes(upperTerm) ||
+        (termMap[upperTerm] && semesterName.includes(termMap[upperTerm])) ||
+        Object.entries(termMap).some(([fullTerm, abbrev]) => 
+          (upperTerm === abbrev && semesterName.includes(abbrev)) ||
+          (upperTerm === fullTerm && semesterName.includes(fullTerm))
+        )
+      );
+    });
+
+    if (exactMatch) {
+      console.log(`✓ Returning exact match: "${exactMatch.name}" (id: ${exactMatch.id})`);
+      console.log(`=== findClosestSemester END (exact match) ===\n`);
+      return exactMatch;
+    }
+    
+    console.log(`No exact match found for term="${term}", trying all matches...`);
+  }
 
   // If no exact match, return the first semester from the matching year
-  return matchingYearSemesters[0];
+  const fallback = matchingYearSemesters[0];
+  if (term) {
+    console.log(`No exact match found for term="${term}", using fallback: "${fallback.name}" (id: ${fallback.id})`);
+  } else {
+    console.log(`No term extracted, using fallback: "${fallback.name}" (id: ${fallback.id})`);
+  }
+  console.log(`=== findClosestSemester END (fallback) ===\n`);
+  return fallback;
 };
 
 const findMatchingUniversityCourse = (
@@ -689,21 +901,63 @@ const addOcrCourses = async () => {
 
   loading.value = true;
   try {
-    ocrResults.value.courses.forEach(async (course) => {
-      const matchingSemester = findClosestSemester(course.semester);
+    // Ensure semesters are loaded before importing
+    if (!semesters.value || semesters.value.length === 0) {
+      console.log("Semesters not loaded, loading now...");
+      await initialize();
+    }
+    
+    console.log("Available semesters:", semesters.value.map(s => ({ id: s.id, name: s.name })));
+    
+    // Import all courses, including those without semesters
+    const importPromises = ocrResults.value.courses.map(async (course) => {
+      // Try to find matching semester, but allow null if not found or empty
+      // Handle various formats: course.semester could be a string, null, undefined, or empty
+      let matchingSemester = null;
+      const semesterValue = course.semester;
+      
+      console.log("Processing course for import:", {
+        courseNumber: course.courseNumber,
+        courseName: course.courseName,
+        semesterRaw: semesterValue,
+        semesterType: typeof semesterValue,
+        semesterIsString: typeof semesterValue === 'string',
+        semesterTrimmed: typeof semesterValue === 'string' ? semesterValue.trim() : null,
+        availableSemestersCount: semesters.value.length
+      });
+      
+      // Check if semester exists and is not empty after trimming
+      if (semesterValue && typeof semesterValue === 'string' && semesterValue.trim()) {
+        matchingSemester = findClosestSemester(semesterValue.trim());
+      } else if (semesterValue && typeof semesterValue !== 'string') {
+        // If it's not a string, try converting to string
+        const semesterStr = String(semesterValue).trim();
+        if (semesterStr) {
+          matchingSemester = findClosestSemester(semesterStr);
+        }
+      }
+      
       const matchingUniversityCourse = findMatchingUniversityCourse(
         course.courseNumber
       );
-      console.log("course", course);
-      console.log("matcht", matchingUniversityCourse);
+      
+      console.log("Importing course:", {
+        courseNumber: course.courseNumber,
+        courseName: course.courseName,
+        semester: semesterValue,
+        matchingSemester: matchingSemester ? matchingSemester.name : null,
+        matchingSemesterId: matchingSemester ? matchingSemester.id : null,
+        matchingUniversityCourse: matchingUniversityCourse ? matchingUniversityCourse.id : null
+      });
 
       // Only set universityCourseId and courseId if we have a match
+      // Import even if semester is missing - semesterId can be null
       const courseData = {
         universityTranscriptId: currentTranscript.value.id,
         courseNumber: course.courseNumber,
         courseDescription: course.courseName,
         courseHours: course.hours,
-        semesterId: matchingSemester?.id || null,
+        semesterId: matchingSemester ? matchingSemester.id : null, // Allow null for courses without a term
         universityCourseId: matchingUniversityCourse
           ? matchingUniversityCourse.id
           : null,
@@ -714,25 +968,67 @@ const addOcrCourses = async () => {
         status: matchingUniversityCourse ? "Matched" : "UnMatched",
         statusChangedDate: new Date().toISOString(),
       };
+      
+      console.log("Course data being sent to backend:", {
+        ...courseData,
+        semesterId: courseData.semesterId,
+        hasSemesterId: !!courseData.semesterId
+      });
 
       const response = await TranscriptCourseServices.create(courseData);
+      
+      console.log("Created transcript course response:", {
+        id: response.data.id,
+        semesterId: response.data.semesterId,
+        courseDataSemesterId: courseData.semesterId,
+        matchingSemesterId: matchingSemester?.id,
+        responseSemester: response.data.semester
+      });
 
+      // If the response includes semester data, use it; otherwise use matchingSemester
+      // The backend might return the semester object if it was included in the response
+      const responseSemester = response.data.semester || matchingSemester;
+      
+      // Ensure semesterId is set correctly - use response data first, then matchingSemester
+      let finalSemesterId = response.data.semesterId;
+      if (!finalSemesterId && matchingSemester) {
+        finalSemesterId = matchingSemester.id;
+      }
+      
       // Add the created course to the transcriptCourses array with proper relations
       const newCourse = {
         ...response.data,
+        semesterId: finalSemesterId || null, // Explicitly set semesterId
         universityCourse: matchingUniversityCourse || null,
         course: matchingUniversityCourse?.course || null,
-        semester: matchingSemester || null,
+        semester: responseSemester || null,
         universityTranscript: currentTranscript.value,
       };
+      
+      console.log("Final newCourse object:", {
+        id: newCourse.id,
+        semesterId: newCourse.semesterId,
+        semester: newCourse.semester ? newCourse.semester.name : null,
+        hasSemester: !!newCourse.semester
+      });
 
       transcriptCourses.value.push(newCourse);
       
-      // Initialize selected course ID if courseId is present
+      // Initialize selected course ID if courseId is present (from automatic lookup/match)
       if (newCourse.courseId) {
         selectedCourseIds.value[newCourse.id] = newCourse.courseId;
+        // Mark this as an auto-matched course (not manually selected)
+        // This prevents yellow styling for generic courses that were automatically matched
+        autoMatchedCourses.value.add(newCourse.id);
+        // Store the original auto-matched course ID
+        originalAutoMatchedCourseIds.value[newCourse.id] = newCourse.courseId;
       }
+      
+      return newCourse;
     });
+    
+    // Wait for all courses to be imported (including those without terms)
+    await Promise.all(importPromises);
 
     // Refresh transcript to get updated status
     await UniversityTranscriptServices.get(transcriptId.value)
@@ -776,7 +1072,11 @@ const calculateGPA = (courses) => {
     "D-": 0.7,
     F: 0.0,
     P: 0.0,
+    S: 0.0, // Satisfactory - pass/fail, counts as passing but not towards GPA
   };
+
+  // Pass/fail grades (S, P, P*) should not count towards GPA hours
+  const passFailGrades = ['S', 'P', 'P*'];
 
   let totalPoints = 0;
   let totalHours = 0;
@@ -784,6 +1084,12 @@ const calculateGPA = (courses) => {
   courses.forEach((course) => {
     const hours = parseFloat(course.hours) || 0;
     const grade = course.grade ? course.grade.toUpperCase() : "";
+    
+    // Skip pass/fail grades in GPA calculation (they count as passing for hours but not for GPA)
+    if (passFailGrades.includes(grade)) {
+      return; // Don't add to totalHours or totalPoints for GPA
+    }
+
     const points = gradePoints[grade] || 0;
 
     totalPoints += points * hours;
@@ -804,6 +1110,16 @@ const showConfirmDialog = (title, message, action) => {
 const handleTableCourseSelect = (item, courseId) => {
   if (courseId) {
     selectedCourseIds.value[item.id] = courseId;
+    // Check if this course was originally auto-matched and if the selected course matches
+    const originalAutoMatchedCourseId = originalAutoMatchedCourseIds.value[item.id];
+    if (originalAutoMatchedCourseId && originalAutoMatchedCourseId !== courseId) {
+      // User selected a different course than the original auto-match, remove from auto-matched
+      autoMatchedCourses.value.delete(item.id);
+    } else if (!originalAutoMatchedCourseId) {
+      // Course was never auto-matched, remove from auto-matched if it was there
+      autoMatchedCourses.value.delete(item.id);
+    }
+    // If the selected course matches the original auto-matched course, keep it in autoMatchedCourses
     // Update the status to "Matched" when a course is selected
     const index = transcriptCourses.value.findIndex(tc => tc.id === item.id);
     if (index !== -1) {
@@ -811,6 +1127,9 @@ const handleTableCourseSelect = (item, courseId) => {
     }
   } else {
     delete selectedCourseIds.value[item.id];
+    // Remove from auto-matched courses when course is cleared
+    autoMatchedCourses.value.delete(item.id);
+    delete originalAutoMatchedCourseIds.value[item.id];
     // Optionally reset status when course is cleared
     const index = transcriptCourses.value.findIndex(tc => tc.id === item.id);
     if (index !== -1 && transcriptCourses.value[index].status === "Matched") {
@@ -837,8 +1156,10 @@ const getSelectedCourse = (item) => {
 };
 
 // Check if a course is a generic course (pattern XXXX-001H or XXXX-003H)
+// Only show yellow if the course was manually selected (not auto-matched during import)
+// And if manually selected, only show yellow if it's different from the original auto-matched course
 const isGenericCourse = (item) => {
-  // Check both selectedCourseIds and item.courseId
+  // Check both selectedCourseIds and item.courseId (prioritize selectedCourseIds for manual selections)
   const courseId = selectedCourseIds.value[item.id] || item.courseId;
   if (!courseId) return false;
   
@@ -849,14 +1170,65 @@ const isGenericCourse = (item) => {
   // Pattern: prefix + "-" + "001" or "003" + single digit
   const courseNumber = course.number || '';
   const genericPattern = /^[A-Z]{2,4}-(001|003)[1-9]$/;
-  return genericPattern.test(courseNumber);
+  const isGeneric = genericPattern.test(courseNumber);
+  
+  if (!isGeneric) return false;
+  
+  // Check if this course was auto-matched (from lookup or import)
+  // If it was auto-matched and the selected course matches the original, don't show yellow
+  
+  // First, check if it's in our tracking (from import or initialization)
+  const originalAutoMatchedCourseId = originalAutoMatchedCourseIds.value[item.id];
+  if (originalAutoMatchedCourseId && originalAutoMatchedCourseId === courseId) {
+    // The selected course matches the original auto-matched course, don't show yellow
+    return false;
+  }
+  
+  // Second, check if the courseId matches what would be auto-matched from universityCourse lookup
+  // This handles cases where the course was auto-matched from the database but not tracked
+  // We check if: item has universityCourseId, has universityCourse with course, and that course.id matches the selected courseId
+  if (item.universityCourseId && item.universityCourse) {
+    // Get the course ID from the universityCourse relationship
+    const universityCourseMatchedId = item.universityCourse.course?.id || item.universityCourse.courseId;
+    // Also check if item.courseId itself matches (the stored courseId from the database)
+    const storedCourseId = item.courseId;
+    
+    // If the selected courseId matches either the universityCourse's course OR the stored courseId
+    // AND the stored courseId matches what would be looked up, then it was auto-matched
+    if ((universityCourseMatchedId === courseId) || (storedCourseId === courseId && storedCourseId === universityCourseMatchedId)) {
+      // This course matches what would be auto-matched from the universityCourse lookup
+      // Don't show yellow - it's effectively an auto-match
+      // Also store it in our tracking for future reference
+      if (!originalAutoMatchedCourseId) {
+        originalAutoMatchedCourseIds.value[item.id] = courseId;
+        autoMatchedCourses.value.add(item.id);
+      }
+      return false;
+    }
+  }
+  
+  // Third, check if item.courseId matches the current selection and if there's a universityCourseId
+  // This is a fallback for cases where the relationship might not be fully loaded
+  if (item.courseId === courseId && item.universityCourseId) {
+    // If there's a universityCourseId, it was likely auto-matched from lookup
+    // Don't show yellow if it matches the stored courseId
+    // Also store it in our tracking
+    if (!originalAutoMatchedCourseId) {
+      originalAutoMatchedCourseIds.value[item.id] = courseId;
+      autoMatchedCourses.value.add(item.id);
+    }
+    return false;
+  }
+  
+  // If there's no match with auto-matched courses, show yellow (it's a manually selected generic course)
+  return true;
 };
 
 // Get row props based on grade
 const getRowProps = ({ item }) => {
   const grade = item.grade?.toUpperCase()?.trim();
-  // Check if grade matches A, B, C, D with optional + or - (e.g., A+, A-, B, C+, D-), or P/P*
-  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*'];
+  // Check if grade matches A, B, C, D with optional + or - (e.g., A+, A-, B, C+, D-), or P/P*/S
+  const validGrades = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'P', 'P*', 'S'];
   const isGreyRow = !validGrades.includes(grade);
   return {
     class: {
@@ -891,10 +1263,12 @@ const saveSelectedCourses = async () => {
     for (const [transcriptCourseId, courseId] of Object.entries(selectedCourseIds.value)) {
       const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
       if (transcriptCourse && courseId) {
+        // Preserve existing status if it's "Approved", otherwise set to "Matched"
+        const newStatus = transcriptCourse.status === "Approved" ? "Approved" : "Matched";
         const updateData = {
           ...transcriptCourse,
           courseId: courseId,
-          status: "Matched", // Ensure status is set to Matched
+          status: newStatus,
         };
         updatePromises.push(
           TranscriptCourseServices.update(transcriptCourseId, updateData)
@@ -906,9 +1280,26 @@ const saveSelectedCourses = async () => {
     for (const [transcriptCourseId, permanentAssignment] of Object.entries(permanentAssignmentChanges.value)) {
       const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
       if (transcriptCourse) {
+        // Preserve all existing data including status
         const updateData = {
           ...transcriptCourse,
           permanentAssignment: permanentAssignment,
+        };
+        updatePromises.push(
+          TranscriptCourseServices.update(transcriptCourseId, updateData)
+        );
+      }
+    }
+
+    // Save semester changes for all courses (including those that already have a semester)
+    for (const [transcriptCourseId, semesterId] of Object.entries(semesterChanges.value)) {
+      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
+      if (transcriptCourse) {
+        // Allow updating semester even if course already has one, and allow setting to null
+        // Preserve all existing data including status
+        const updateData = {
+          ...transcriptCourse,
+          semesterId: semesterId || null, // Allow null to clear semester
         };
         updatePromises.push(
           TranscriptCourseServices.update(transcriptCourseId, updateData)
@@ -921,6 +1312,7 @@ const saveSelectedCourses = async () => {
     // Clear the tracked changes
     selectedCourseIds.value = {};
     permanentAssignmentChanges.value = {};
+    semesterChanges.value = {};
     
     // Refresh transcript to get updated status
     await UniversityTranscriptServices.get(transcriptId.value)
@@ -1144,7 +1536,7 @@ onMounted(() => {
             color="primary"
             @click="saveSelectedCourses"
             :loading="saveChangesLoading"
-            :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0)"
+              :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0) && (!semesterChanges || Object.keys(semesterChanges.value || {}).length === 0)"
             class="ml-2"
           >
             <v-icon left>mdi-content-save</v-icon>
@@ -1194,6 +1586,7 @@ onMounted(() => {
               variant="outlined"
               hide-details
               clearable
+              :disabled="item.status === 'Approved'"
               :class="[
                 'compact-autocomplete',
                 { 'generic-course': isGenericCourse(item) }
@@ -1239,7 +1632,18 @@ onMounted(() => {
             </div>
           </template>
           <template v-slot:[`item.semester.name`]="{ item }">
-            {{ item.semester?.name || 'N/A' }}
+            <v-select
+              :model-value="semesterChanges[item.id] !== undefined ? semesterChanges[item.id] : (item.semester?.id || null)"
+              :items="sortedSemesters"
+              item-title="name"
+              item-value="id"
+              density="compact"
+              variant="outlined"
+              hide-details
+              placeholder="Select Term"
+              @update:model-value="(value) => semesterChanges[item.id] = value"
+              style="min-width: 120px;"
+            ></v-select>
           </template>
         </v-data-table>
       </v-col>
@@ -1415,7 +1819,7 @@ onMounted(() => {
               <v-col cols="12">
                 <v-select
                   v-model="editedItem.semesterId"
-                  :items="semesters"
+                  :items="sortedSemesters"
                   item-title="name"
                   item-value="id"
                   label="Semester"
