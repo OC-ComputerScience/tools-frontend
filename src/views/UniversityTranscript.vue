@@ -262,24 +262,25 @@ onMounted(() => {
 </script>
 
 <template>
-  <v-container>
-    <v-row>
-      <v-col cols="12">
-        <h1>University Transcripts</h1>
+  <div>
+    <v-container>
+      <v-toolbar>
+        <v-toolbar-title>Manage University Transcripts</v-toolbar-title>
+        <v-spacer></v-spacer>
         <v-btn color="primary" @click="openDialog()"
           >Add University Transcript</v-btn
         >
-      </v-col>
-    </v-row>
+      </v-toolbar>
+      <br />
 
-    <v-row>
-      <v-col cols="12">
-        <v-data-table
-          :headers="headers"
-          :items="universityTranscripts"
-          :loading="loading"
-          class="elevation-1"
-        >
+      <v-card>
+        <v-card-title>University Transcripts</v-card-title>
+        <v-card-text>
+          <v-data-table
+            :headers="headers"
+            :items="universityTranscripts"
+            :loading="loading"
+          >
           <template v-slot:item.status="{ item }">
             <v-chip
               :color="getStatusColor(item.status)"
@@ -323,9 +324,9 @@ onMounted(() => {
               mdi-book-open-page-variant
             </v-icon>
           </template>
-        </v-data-table>
-      </v-col>
-    </v-row>
+          </v-data-table>
+        </v-card-text>
+      </v-card>
 
     <v-dialog v-model="dialog" max-width="500px">
       <v-card>
@@ -505,7 +506,8 @@ onMounted(() => {
       :model-value="true"
       @update:model-value="pdfDialog = $event"
     />
-  </v-container>
+    </v-container>
+  </div>
 </template>
 
 <style scoped>

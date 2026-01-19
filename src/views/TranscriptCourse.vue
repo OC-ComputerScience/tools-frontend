@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import TranscriptCourseServices from "../services/transcriptCourseServices";
 import UniversityTranscriptServices from "../services/universityTranscriptServices";
 import UniversityCourseServices from "../services/universityCourseServices";
@@ -11,6 +11,7 @@ import apiClient from "../services/services.js";
 import PDFViewer from "./PDFViewer.vue";
 
 const route = useRoute();
+const router = useRouter();
 const transcriptId = computed(() => route.params.id);
 const dialog = ref(false);
 const loading = ref(false); // General loading state (for initialize, etc.)
@@ -1353,100 +1354,111 @@ onMounted(() => {
 </script>
 
 <template>
-  <v-container>
-    <v-row>
-      <v-col cols="12">
-        <h1>Transcript Courses</h1>
-        <div v-if="currentTranscript" class="mb-4">
-          <div class="d-flex align-center justify-space-between">
-            <div>
-              <h2>Transcript: {{ currentTranscript.OCIdNumber }}</h2>
-              <p>Student: {{ currentTranscript.name }}</p>
-              <p>University: {{ currentTranscript.university?.name }}</p>
-              <p><strong>Courses: {{ transcriptCourses.length }}</strong></p>
-              <p><strong>Total Hours: {{ totalHours }}</strong></p>
-            </div>
-            <div class="d-flex align-center">
-              <v-chip 
-                :color="getStatusColor(currentTranscript.status)" 
-                variant="flat"
-                class="mr-4"
-              >
-                Status: {{ currentTranscript.status || 'Not Process' }}
-              </v-chip>
-              <v-btn color="primary" @click="viewTranscript">
-                <v-icon left>mdi-file-pdf-box</v-icon>
-                View Transcript
-              </v-btn>
-            </div>
+  <div>
+    <v-container>
+      <v-toolbar>
+        <v-toolbar-title>Manage Transcript Courses</v-toolbar-title>
+        <v-spacer></v-spacer>
+        <v-btn
+          color="primary"
+          @click="router.push({ name: 'Transcripts' })"
+          class="mr-2"
+        >
+          <v-icon left>mdi-arrow-left</v-icon>
+          Back to Transcripts
+        </v-btn>
+        <v-btn color="primary" @click="openDialog()">
+          Add Transcript Course
+        </v-btn>
+      </v-toolbar>
+      <br />
+
+      <div v-if="currentTranscript" class="mb-4">
+        <div class="d-flex align-center justify-space-between">
+          <div>
+            <h2>Transcript: {{ currentTranscript.OCIdNumber }}</h2>
+            <p>Student: {{ currentTranscript.name }}</p>
+            <p>University: {{ currentTranscript.university?.name }}</p>
+            <p><strong>Courses: {{ transcriptCourses.length }}</strong></p>
+            <p><strong>Total Hours: {{ totalHours }}</strong></p>
+          </div>
+          <div class="d-flex align-center">
+            <v-chip 
+              :color="getStatusColor(currentTranscript.status)" 
+              variant="flat"
+              class="mr-4"
+            >
+              Status: {{ currentTranscript.status || 'Not Process' }}
+            </v-chip>
+            <v-btn color="primary" @click="viewTranscript">
+              <v-icon left>mdi-file-pdf-box</v-icon>
+              View Transcript
+            </v-btn>
           </div>
         </div>
-        <div class="d-flex align-center">
-          <v-btn color="primary" @click="openDialog()" class="mr-2">
-            Add Transcript Course
-          </v-btn>
-          <v-btn
-            color="info"
-            @click="processOCR"
-            :loading="ocrLoading"
-            :disabled="!currentTranscript"
-            class="mr-2"
-          >
-            <v-icon left>mdi-text-recognition</v-icon>
-            Process OCR
-          </v-btn>
-          <v-btn
-            color="error"
-            @click="deleteAllCourses"
-            :loading="deleteAllLoading"
-            class="ml-2"
-          >
-            <v-icon left>mdi-delete-sweep</v-icon>
-            Delete All Courses
-          </v-btn>
-          <v-btn
-            color="success"
-            @click="approveAllCourses"
-            :loading="approveAllLoading"
-            class="ml-2"
-          >
-            <v-icon left>mdi-check-all</v-icon>
-            Approve All
-          </v-btn>
-          <v-btn
-            color="secondary"
-            @click="matchGenericCourses"
-            :loading="matchGenericsLoading"
-            :disabled="!currentTranscript"
-            class="ml-2"
-          >
-            <v-icon left>mdi-auto-fix</v-icon>
-            Add Generics
-          </v-btn>
-          <v-btn
-            color="primary"
-            @click="saveSelectedCourses"
-            :loading="saveChangesLoading"
-              :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0) && (!semesterChanges || Object.keys(semesterChanges || {}).length === 0)"
-            class="ml-2"
-          >
-            <v-icon left>mdi-content-save</v-icon>
-            Save Changes
-          </v-btn>
-        </div>
-      </v-col>
-    </v-row>
+      </div>
 
-    <v-row>
-      <v-col cols="12">
-        <v-data-table
-          :headers="headers"
-          :items="sortedTranscriptCourses"
-          :loading="loading"
-          density="compact"
-          class="elevation-1 compact-table"
-          :row-props="getRowProps"
+      <div class="d-flex align-center mb-4">
+        <v-btn
+          color="info"
+          @click="processOCR"
+          :loading="ocrLoading"
+          :disabled="!currentTranscript"
+          class="mr-2"
         >
+          <v-icon left>mdi-text-recognition</v-icon>
+          Process OCR
+        </v-btn>
+        <v-btn
+          color="error"
+          @click="deleteAllCourses"
+          :loading="deleteAllLoading"
+          class="mr-2"
+        >
+          <v-icon left>mdi-delete-sweep</v-icon>
+          Delete All Courses
+        </v-btn>
+        <v-btn
+          color="success"
+          @click="approveAllCourses"
+          :loading="approveAllLoading"
+          class="mr-2"
+        >
+          <v-icon left>mdi-check-all</v-icon>
+          Approve All
+        </v-btn>
+        <v-btn
+          color="secondary"
+          @click="matchGenericCourses"
+          :loading="matchGenericsLoading"
+          :disabled="!currentTranscript"
+          class="mr-2"
+        >
+          <v-icon left>mdi-auto-fix</v-icon>
+          Add Generics
+        </v-btn>
+        <v-btn
+          color="primary"
+          @click="saveSelectedCourses"
+          :loading="saveChangesLoading"
+            :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0) && (!semesterChanges || Object.keys(semesterChanges || {}).length === 0)"
+        >
+          <v-icon left>mdi-content-save</v-icon>
+          Save Changes
+        </v-btn>
+      </div>
+
+      <v-card>
+        <v-card-title>Transcript Courses</v-card-title>
+        <v-card-text>
+          <v-data-table
+            :headers="headers"
+            :items="sortedTranscriptCourses"
+            :loading="loading"
+            density="compact"
+            class="compact-table"
+            :row-props="getRowProps"
+          >
           <template v-slot:item.actions="{ item }">
             <v-icon
               small
@@ -1536,9 +1548,9 @@ onMounted(() => {
               style="min-width: 120px;"
             ></v-select>
           </template>
-        </v-data-table>
-      </v-col>
-    </v-row>
+          </v-data-table>
+        </v-card-text>
+      </v-card>
 
     <!-- OCR Results Dialog -->
     <v-dialog v-model="ocrDialog" max-width="800px">
@@ -1795,7 +1807,8 @@ onMounted(() => {
 
     <!-- PDF Viewer Dialog -->
     <PDFViewer v-model="pdfDialog" :path="currentPdfUrl" />
-  </v-container>
+    </v-container>
+  </div>
 </template>
 
 <style scoped>

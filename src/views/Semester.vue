@@ -125,37 +125,38 @@ onMounted(() => {
 </script>
 
 <template>
-  <v-container>
-    <v-row>
-      <v-col cols="12">
-        <h1>Semesters</h1>
+  <div>
+    <v-container>
+      <v-toolbar>
+        <v-toolbar-title>Manage Semesters</v-toolbar-title>
+        <v-spacer></v-spacer>
         <v-btn color="primary" @click="openDialog()">Add Semester</v-btn>
-      </v-col>
-    </v-row>
+      </v-toolbar>
+      <br />
 
-    <v-row>
-      <v-col cols="12">
-        <v-data-table
-          :headers="headers"
-          :items="semesters"
-          :loading="loading"
-          class="elevation-1"
-        >
-          <template v-slot:item.startDate="{ item }">
-            {{ formatDate(item.startDate) }}
-          </template>
-          <template v-slot:item.endDate="{ item }">
-            {{ formatDate(item.endDate) }}
-          </template>
-          <template v-slot:item.actions="{ item }">
-            <v-icon small class="mr-2" @click="editItem(item)">
-              mdi-pencil
-            </v-icon>
-            <v-icon small @click="deleteItem(item)"> mdi-delete </v-icon>
-          </template>
-        </v-data-table>
-      </v-col>
-    </v-row>
+      <v-card>
+        <v-card-title>Semesters</v-card-title>
+        <v-card-text>
+          <v-data-table
+            :headers="headers"
+            :items="semesters"
+            :loading="loading"
+          >
+            <template v-slot:item.startDate="{ item }">
+              {{ formatDate(item.startDate) }}
+            </template>
+            <template v-slot:item.endDate="{ item }">
+              {{ formatDate(item.endDate) }}
+            </template>
+            <template v-slot:item.actions="{ item }">
+              <v-icon small class="mr-2" @click="editItem(item)">
+                mdi-pencil
+              </v-icon>
+              <v-icon small @click="deleteItem(item)"> mdi-delete </v-icon>
+            </template>
+          </v-data-table>
+        </v-card-text>
+      </v-card>
 
     <v-dialog v-model="dialog" max-width="500px">
       <v-card>
@@ -204,7 +205,8 @@ onMounted(() => {
         </v-card-actions>
       </v-card>
     </v-dialog>
-  </v-container>
+    </v-container>
+  </div>
 </template>
 
 <style scoped>

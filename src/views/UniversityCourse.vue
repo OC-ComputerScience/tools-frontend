@@ -264,43 +264,44 @@ onMounted(() => {
 </script>
 
 <template>
-  <v-container>
-    <v-row>
-      <v-col cols="12">
-        <div class="d-flex align-center">
-          <h1 class="mr-4">University Courses</h1>
-          <v-btn color="primary" @click="openDialog()" class="mr-2"
-            >Add University Course</v-btn
-          >
+  <div>
+    <v-container>
+      <v-toolbar>
+        <v-toolbar-title>Manage University Courses</v-toolbar-title>
+        <v-spacer></v-spacer>
+        <v-btn color="primary" @click="openDialog()"
+          >Add University Course</v-btn
+        >
+      </v-toolbar>
+      <br />
+
+      <v-row>
+        <v-col cols="12" sm="6" md="4">
+          <v-text-field
+            v-model="universityFilter"
+            label="Filter by University"
+            prepend-icon="mdi-magnify"
+            clearable
+          ></v-text-field>
+        </v-col>
+        <v-col cols="12" sm="6" md="8" class="d-flex align-center">
           <v-btn
             color="primary"
             @click="openImportDialog"
             prepend-icon="mdi-upload"
             >Import University Courses</v-btn
           >
-        </div>
-      </v-col>
-    </v-row>
+        </v-col>
+      </v-row>
 
-    <v-row>
-      <v-col cols="12" sm="6" md="4">
-        <v-text-field
-          v-model="universityFilter"
-          label="Filter by University"
-          prepend-icon="mdi-magnify"
-          clearable
-        ></v-text-field>
-      </v-col>
-    </v-row>
-
-    <v-row>
-      <v-col cols="12">
-        <v-data-table
-          :headers="headers"
-          :items="filteredCourses"
-          :loading="loading"
-          class="elevation-1"
-        >
+      <v-card>
+        <v-card-title>University Courses</v-card-title>
+        <v-card-text>
+          <v-data-table
+            :headers="headers"
+            :items="filteredCourses"
+            :loading="loading"
+          >
           <template v-slot:item.actions="{ item }">
             <v-icon small class="mr-2" @click="editItem(item)">
               mdi-pencil
@@ -326,9 +327,9 @@ onMounted(() => {
           <template v-slot:[`item.course.description`]="{ item }">
             {{ item.course ? item.course.description : "N/A" }}
           </template>
-        </v-data-table>
-      </v-col>
-    </v-row>
+          </v-data-table>
+        </v-card-text>
+      </v-card>
 
     <v-dialog v-model="dialog" max-width="500px">
       <v-card>
@@ -534,7 +535,8 @@ onMounted(() => {
         </v-card-actions>
       </v-card>
     </v-dialog>
-  </v-container>
+    </v-container>
+  </div>
 </template>
 
 <style scoped>
