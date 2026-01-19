@@ -15,6 +15,31 @@ const currentPdfUrl = ref("");
 const loading = ref(false);
 const universityTranscripts = ref([]);
 const universities = ref([]);
+const ocIdNumberFilter = ref("");
+const statusFilter = ref("");
+const statusOptions = ["Not Process", "In-Progress", "Completed", "Exported"];
+const filteredTranscripts = computed(() => {
+  let filtered = universityTranscripts.value;
+  
+  // Filter by OC ID Number
+  if (ocIdNumberFilter.value) {
+    filtered = filtered.filter((transcript) =>
+      transcript.OCIdNumber
+        ?.toLowerCase()
+        .includes(ocIdNumberFilter.value.toLowerCase())
+    );
+  }
+  
+  // Filter by status
+  if (statusFilter.value) {
+    filtered = filtered.filter((transcript) => {
+      const transcriptStatus = transcript.status || "Not Process";
+      return transcriptStatus === statusFilter.value;
+    });
+  }
+  
+  return filtered;
+});
 const editedIndex = ref(-1);
 const editedItem = ref({
   OCIdNumber: "",
@@ -262,24 +287,44 @@ onMounted(() => {
 </script>
 
 <template>
-  <v-container>
-    <v-row>
-      <v-col cols="12">
-        <h1>University Transcripts</h1>
+  <div>
+    <v-container>
+      <v-toolbar>
+        <v-toolbar-title>Manage University Transcripts</v-toolbar-title>
+        <v-spacer></v-spacer>
         <v-btn color="primary" @click="openDialog()"
           >Add University Transcript</v-btn
         >
-      </v-col>
-    </v-row>
+      </v-toolbar>
+      <br />
 
-    <v-row>
-      <v-col cols="12">
-        <v-data-table
-          :headers="headers"
-          :items="universityTranscripts"
-          :loading="loading"
-          class="elevation-1"
-        >
+      <v-row>
+        <v-col cols="12" sm="6" md="4">
+          <v-text-field
+            v-model="ocIdNumberFilter"
+            label="Search by OC Student ID Number"
+            prepend-icon="mdi-magnify"
+            clearable
+          ></v-text-field>
+        </v-col>
+        <v-col cols="12" sm="6" md="4">
+          <v-select
+            v-model="statusFilter"
+            :items="statusOptions"
+            label="Filter by Status"
+            clearable
+          ></v-select>
+        </v-col>
+      </v-row>
+
+      <v-card>
+        <v-card-title>University Transcripts</v-card-title>
+        <v-card-text>
+          <v-data-table
+            :headers="headers"
+            :items="filteredTranscripts"
+            :loading="loading"
+          >
           <template v-slot:item.status="{ item }">
             <v-chip
               :color="getStatusColor(item.status)"
@@ -323,9 +368,9 @@ onMounted(() => {
               mdi-book-open-page-variant
             </v-icon>
           </template>
-        </v-data-table>
-      </v-col>
-    </v-row>
+          </v-data-table>
+        </v-card-text>
+      </v-card>
 
     <v-dialog v-model="dialog" max-width="500px">
       <v-card>
@@ -505,7 +550,8 @@ onMounted(() => {
       :model-value="true"
       @update:model-value="pdfDialog = $event"
     />
-  </v-container>
+    </v-container>
+  </div>
 </template>
 
 <style scoped>
