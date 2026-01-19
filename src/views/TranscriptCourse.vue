@@ -84,7 +84,7 @@ const selectedCourseIds = ref({});
 const headers = [
   { title: "Semester", key: "semester.name", width: "80px" },
   { title: "Course\nNumber", key: "courseNumber", width: "80px" },
-  { title: "Course\nDescription", key: "courseDescription", width: "150px" },
+  { title: "Course\nDescription", key: "courseDescription", width: "280px" },
   { title: "Hours", key: "courseHours", width: "60px" },
   { title: "Grade", key: "grade", width: "60px" },
   {
@@ -600,9 +600,26 @@ const processOCR = async () => {
     );
     ocrResults.value = response.data;
     ocrDialog.value = true;
+    showSnackbar("Transcript processed successfully");
   } catch (error) {
     console.error("Error processing OCR:", error);
-    alert("Error processing OCR. Please try again.");
+    
+    // Extract error message from response
+    let errorMessage = "Error processing OCR. Please try again.";
+    if (error.response && error.response.data && error.response.data.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    // Check for specific error types
+    if (error.response && error.response.status === 503) {
+      errorMessage = "The AI service is currently overloaded. Please wait a moment and try again. If the problem persists, try again in a few minutes.";
+    } else if (error.response && error.response.status === 429) {
+      errorMessage = "Too many requests to the AI service. Please wait a moment and try again.";
+    }
+    
+    showSnackbar(errorMessage, "error");
   } finally {
     ocrLoading.value = false;
   }
@@ -855,11 +872,12 @@ const addOcrCourses = async () => {
 
       // Only set universityCourseId and courseId if we have a match
       // Import even if semester is missing - semesterId can be null
+      // Import even if grade is missing - grade can be null
       const courseData = {
         universityTranscriptId: currentTranscript.value.id,
-        courseNumber: course.courseNumber,
-        courseDescription: course.courseName,
-        courseHours: course.hours,
+        courseNumber: course.courseNumber || null,
+        courseDescription: course.courseName || '', // courseDescription cannot be null - use empty string as fallback
+        courseHours: course.hours || 0,
         semesterId: matchingSemester ? matchingSemester.id : null, // Allow null for courses without a term
         universityCourseId: matchingUniversityCourse
           ? matchingUniversityCourse.id
@@ -867,7 +885,7 @@ const addOcrCourses = async () => {
         courseId: matchingUniversityCourse?.course
           ? matchingUniversityCourse.course.id
           : null,
-        grade: course.grade,
+        grade: course.grade || null, // Allow null for courses without grades
         status: matchingUniversityCourse ? "Matched" : "UnMatched",
         statusChangedDate: new Date().toISOString(),
       };
@@ -1373,6 +1391,17 @@ onMounted(() => {
       </v-toolbar>
       <br />
 
+      <v-alert
+        type="warning"
+        variant="tonal"
+        class="mb-4"
+        prominent
+      >
+        <div class="text-body-1 font-weight-medium">
+          ⚠️ Important: Please review all transcript courses carefully for correct semester, grade, and course count against the original transcript. The OCR/AI process is not perfect (yet!)
+        </div>
+      </v-alert>
+
       <div v-if="currentTranscript" class="mb-4">
         <div class="d-flex align-center justify-space-between">
           <div>
@@ -1506,6 +1535,13 @@ onMounted(() => {
                 }
               "
             ></v-autocomplete>
+          </template>
+          <template v-slot:[`item.courseDescription`]="{ item }">
+            <span :title="item.courseDescription || ''">
+              {{ (item.courseDescription || '').length > 25 
+                  ? (item.courseDescription || '').substring(0, 25) + '...' 
+                  : (item.courseDescription || '') }}
+            </span>
           </template>
           <template v-slot:[`item.universityCourse.courseNumber`]="{ item }">
             {{ item.universityCourse?.courseNumber || 'N/A' }}
