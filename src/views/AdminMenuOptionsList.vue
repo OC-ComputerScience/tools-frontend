@@ -1,7 +1,7 @@
 <script setup>
 import MenuOptionServices from "../services/menuOptionServices";
 import RoleServices from "../services/roleServices";
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 
 const menuOptions = ref([]);
 const roles = ref([]);
@@ -10,6 +10,14 @@ const dialog = ref(false);
 const editedMenuOption = ref({});
 const selectedRoleIds = ref([]);
 const defaultMenuOption = ref({ option: "", routeName: "" });
+const roleFilter = ref("");
+const filteredMenuOptions = computed(() => {
+  if (!roleFilter.value) return menuOptions.value;
+  return menuOptions.value.filter((menuOption) => {
+    if (!menuOption.roles || menuOption.roles.length === 0) return false;
+    return menuOption.roles.some((role) => role.id === parseInt(roleFilter.value));
+  });
+});
 
 const retrieveMenuOptions = () => {
   MenuOptionServices.getAllMenuOptions()
@@ -120,6 +128,19 @@ onMounted(() => {
       </v-toolbar>
       <br />
 
+      <v-row>
+        <v-col cols="12" sm="6" md="4">
+          <v-select
+            v-model="roleFilter"
+            :items="roles"
+            item-title="name"
+            item-value="id"
+            label="Filter by Role"
+            clearable
+          ></v-select>
+        </v-col>
+      </v-row>
+
       <v-card>
         <v-card-title>Menu Options</v-card-title>
         <v-card-text>
@@ -136,7 +157,7 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="menuOption in menuOptions" :key="menuOption.id">
+            <tr v-for="menuOption in filteredMenuOptions" :key="menuOption.id">
               <td>{{ menuOption.id }}</td>
               <td>{{ menuOption.option }}</td>
               <td>{{ menuOption.routeName }}</td>

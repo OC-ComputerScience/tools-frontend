@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import TranscriptCourseServices from "../services/transcriptCourseServices";
 import UniversityTranscriptServices from "../services/universityTranscriptServices";
 import UniversityCourseServices from "../services/universityCourseServices";
@@ -11,6 +11,7 @@ import apiClient from "../services/services.js";
 import PDFViewer from "./PDFViewer.vue";
 
 const route = useRoute();
+const router = useRouter();
 const transcriptId = computed(() => route.params.id);
 const dialog = ref(false);
 const loading = ref(false); // General loading state (for initialize, etc.)
@@ -211,7 +212,6 @@ const initialize = async () => {
   await SemesterServices.getAll()
     .then((response) => {
       semesters.value = response.data;
-      console.log(`Loaded ${semesters.value.length} semesters:`, semesters.value.map(s => s.name));
     })
     .catch((error) => {
       console.error("Error fetching semesters:", error);
@@ -440,43 +440,34 @@ const matchCourses = async () => {
   try {
     loading.value = true;
     const transcriptId = route.params.id;
-    console.log("Matching courses for transcript:", transcriptId);
 
     // Get the current transcript first to get its university ID
     const currentTranscriptResponse = await UniversityTranscriptServices.get(
       transcriptId
     );
     const currentTranscript = currentTranscriptResponse.data;
-    console.log("Current transcript:", currentTranscript);
 
     // Get all transcript courses for this transcript - make backend request for this specifically
     const transcriptCoursesResponse = await TranscriptCourseServices.getAll();
     const currentTranscriptCourses = transcriptCoursesResponse.data.filter(
       (course) => course.universityTranscriptId === parseInt(transcriptId)
     );
-    console.log("Current transcript courses:", currentTranscriptCourses);
 
     // Get all courses
     const coursesResponse = await CourseServices.getAllCourses();
     const allCourses = coursesResponse.data;
-    console.log("Courses:", allCourses);
 
     // Process each transcript course
     for (const transcriptCourse of currentTranscriptCourses) {
-      console.log("\nProcessing course:", transcriptCourse.courseNumber);
-
       // Find matching university course by course number
       const matchingUniversityCourse = findMatchingUniversityCourse(
         transcriptCourse.courseNumber,
         universityCourses
       );
-      console.log("Matching university course:", matchingUniversityCourse);
 
       if (matchingUniversityCourse) {
         // Find the course from the university course
         const matchedCourse = matchingUniversityCourse.course;
-
-        console.log("Matching course:", matchedCourse);
 
         if (matchedCourse) {
           try {
@@ -493,13 +484,11 @@ const matchCourses = async () => {
               status: "Matched",
               statusChangedDate: new Date().toISOString(),
             };
-            console.log("Updating with data:", updateData);
 
             const response = await TranscriptCourseServices.update(
               transcriptCourse.id,
               updateData
             );
-            console.log("Update response:", response);
 
             if (response && response.data) {
               // Create the updated item with all necessary relations
@@ -509,24 +498,13 @@ const matchCourses = async () => {
                 universityCourse: matchingUniversityCourse,
                 universityTranscript: currentTranscript,
               };
-              console.log("Created updated item:", updatedItem);
 
               // Update the local transcript courses array
               const index = transcriptCourses.value.findIndex(
                 (tc) => tc.id === transcriptCourse.id
               );
               if (index !== -1) {
-                console.log("Updating index:", index);
                 transcriptCourses.value[index] = updatedItem;
-                console.log(
-                  "Updated local array:",
-                  transcriptCourses.value[index]
-                );
-              } else {
-                console.log(
-                  "Could not find index for course:",
-                  transcriptCourse.id
-                );
               }
             } else {
               console.error("Invalid response from update:", response);
@@ -534,17 +512,7 @@ const matchCourses = async () => {
           } catch (updateError) {
             console.error("Error updating course:", updateError);
           }
-        } else {
-          console.log(
-            "No matching course found for university course:",
-            matchingUniversityCourse
-          );
         }
-      } else {
-        console.log(
-          "No matching university course found for:",
-          transcriptCourse.courseNumber
-        );
       }
     }
 
@@ -641,18 +609,11 @@ const processOCR = async () => {
 };
 
 const findClosestSemester = (courseSemester) => {
-  console.log(`\n=== findClosestSemester START ===`);
-  console.log(`Input: "${courseSemester}"`);
-  console.log(`Available semesters count: ${semesters.value.length}`);
-  console.log(`Available semesters:`, semesters.value.map(s => s.name));
-  
   if (!courseSemester) {
-    console.log(`Returning null: courseSemester is falsy`);
     return null;
   }
   
   if (!semesters.value.length) {
-    console.log(`Returning null: no semesters available`);
     return null;
   }
 
@@ -732,10 +693,7 @@ const findClosestSemester = (courseSemester) => {
     }
   }
 
-  console.log(`findClosestSemester: Extracted term="${term}", year="${year}"`);
-
   if (!year) {
-    console.log(`findClosestSemester: Could not extract year from "${courseSemester}"`);
     return null;
   }
 
@@ -766,24 +724,13 @@ const findClosestSemester = (courseSemester) => {
 
   // Find semesters that match the year - use word boundary to avoid partial matches
   const yearPattern = new RegExp(`\\b${year}\\b`);
-  console.log(`Searching for year pattern: \\b${year}\\b`);
   
   const matchingYearSemesters = semesters.value.filter((s) => {
     if (!s.name) return false;
-    const matches = yearPattern.test(s.name);
-    if (matches) {
-      console.log(`  ✓ Matches: "${s.name}"`);
-    }
-    return matches;
+    return yearPattern.test(s.name);
   });
-  
-  console.log(`Found ${matchingYearSemesters.length} semesters matching year "${year}"`);
-  console.log(`Matching semesters:`, matchingYearSemesters.map(s => `${s.name} (id: ${s.id})`));
 
   if (!matchingYearSemesters.length) {
-    console.log(`ERROR: No semesters found for year "${year}"`);
-    console.log(`Trying case-insensitive search...`);
-    
     // Try case-insensitive search
     const yearPatternCI = new RegExp(year, 'i');
     const matchingYearSemestersCI = semesters.value.filter((s) =>
@@ -791,7 +738,6 @@ const findClosestSemester = (courseSemester) => {
     );
     
     if (matchingYearSemestersCI.length > 0) {
-      console.log(`Found ${matchingYearSemestersCI.length} semesters with case-insensitive match:`, matchingYearSemestersCI.map(s => s.name));
       // Continue with case-insensitive matches
       const allMatchingSemesters = matchingYearSemestersCI;
       
@@ -800,7 +746,7 @@ const findClosestSemester = (courseSemester) => {
         const upperTerm = term.toUpperCase();
         const exactMatch = allMatchingSemesters.find((s) => {
           const semesterName = s.name ? s.name.toUpperCase() : "";
-          const matches = (
+          return (
             semesterName.includes(upperTerm) ||
             (termMap[upperTerm] && semesterName.includes(termMap[upperTerm])) ||
             Object.entries(termMap).some(([fullTerm, abbrev]) => 
@@ -808,26 +754,17 @@ const findClosestSemester = (courseSemester) => {
               (upperTerm === fullTerm && semesterName.includes(fullTerm))
             )
           );
-          if (matches) {
-            console.log(`✓ Found exact match: "${s.name}" (id: ${s.id})`);
-          }
-          return matches;
         });
         
         if (exactMatch) {
-          console.log(`=== findClosestSemester END (exact match) ===\n`);
           return exactMatch;
         }
       }
       
       // Return first match if no exact term match
-      const fallback = allMatchingSemesters[0];
-      console.log(`Using fallback: "${fallback.name}" (id: ${fallback.id})`);
-      console.log(`=== findClosestSemester END (fallback) ===\n`);
-      return fallback;
+      return allMatchingSemesters[0];
     }
     
-    console.log(`=== findClosestSemester END (no matches) ===\n`);
     return null;
   }
 
@@ -848,30 +785,18 @@ const findClosestSemester = (courseSemester) => {
     });
 
     if (exactMatch) {
-      console.log(`✓ Returning exact match: "${exactMatch.name}" (id: ${exactMatch.id})`);
-      console.log(`=== findClosestSemester END (exact match) ===\n`);
       return exactMatch;
     }
-    
-    console.log(`No exact match found for term="${term}", trying all matches...`);
   }
 
   // If no exact match, return the first semester from the matching year
-  const fallback = matchingYearSemesters[0];
-  if (term) {
-    console.log(`No exact match found for term="${term}", using fallback: "${fallback.name}" (id: ${fallback.id})`);
-  } else {
-    console.log(`No term extracted, using fallback: "${fallback.name}" (id: ${fallback.id})`);
-  }
-  console.log(`=== findClosestSemester END (fallback) ===\n`);
-  return fallback;
+  return matchingYearSemesters[0];
 };
 
 const findMatchingUniversityCourse = (
   courseNumber,
   courses = universityCourses.value
 ) => {
-  console.log("courses", courses);
   if (!courseNumber || !courses.length) return null;
 
   // Normalize the input course number by removing spaces, hyphens, and converting to uppercase
@@ -903,11 +828,8 @@ const addOcrCourses = async () => {
   try {
     // Ensure semesters are loaded before importing
     if (!semesters.value || semesters.value.length === 0) {
-      console.log("Semesters not loaded, loading now...");
       await initialize();
     }
-    
-    console.log("Available semesters:", semesters.value.map(s => ({ id: s.id, name: s.name })));
     
     // Import all courses, including those without semesters
     const importPromises = ocrResults.value.courses.map(async (course) => {
@@ -915,16 +837,6 @@ const addOcrCourses = async () => {
       // Handle various formats: course.semester could be a string, null, undefined, or empty
       let matchingSemester = null;
       const semesterValue = course.semester;
-      
-      console.log("Processing course for import:", {
-        courseNumber: course.courseNumber,
-        courseName: course.courseName,
-        semesterRaw: semesterValue,
-        semesterType: typeof semesterValue,
-        semesterIsString: typeof semesterValue === 'string',
-        semesterTrimmed: typeof semesterValue === 'string' ? semesterValue.trim() : null,
-        availableSemestersCount: semesters.value.length
-      });
       
       // Check if semester exists and is not empty after trimming
       if (semesterValue && typeof semesterValue === 'string' && semesterValue.trim()) {
@@ -940,15 +852,6 @@ const addOcrCourses = async () => {
       const matchingUniversityCourse = findMatchingUniversityCourse(
         course.courseNumber
       );
-      
-      console.log("Importing course:", {
-        courseNumber: course.courseNumber,
-        courseName: course.courseName,
-        semester: semesterValue,
-        matchingSemester: matchingSemester ? matchingSemester.name : null,
-        matchingSemesterId: matchingSemester ? matchingSemester.id : null,
-        matchingUniversityCourse: matchingUniversityCourse ? matchingUniversityCourse.id : null
-      });
 
       // Only set universityCourseId and courseId if we have a match
       // Import even if semester is missing - semesterId can be null
@@ -968,22 +871,8 @@ const addOcrCourses = async () => {
         status: matchingUniversityCourse ? "Matched" : "UnMatched",
         statusChangedDate: new Date().toISOString(),
       };
-      
-      console.log("Course data being sent to backend:", {
-        ...courseData,
-        semesterId: courseData.semesterId,
-        hasSemesterId: !!courseData.semesterId
-      });
 
       const response = await TranscriptCourseServices.create(courseData);
-      
-      console.log("Created transcript course response:", {
-        id: response.data.id,
-        semesterId: response.data.semesterId,
-        courseDataSemesterId: courseData.semesterId,
-        matchingSemesterId: matchingSemester?.id,
-        responseSemester: response.data.semester
-      });
 
       // If the response includes semester data, use it; otherwise use matchingSemester
       // The backend might return the semester object if it was included in the response
@@ -1004,13 +893,6 @@ const addOcrCourses = async () => {
         semester: responseSemester || null,
         universityTranscript: currentTranscript.value,
       };
-      
-      console.log("Final newCourse object:", {
-        id: newCourse.id,
-        semesterId: newCourse.semesterId,
-        semester: newCourse.semester ? newCourse.semester.name : null,
-        hasSemester: !!newCourse.semester
-      });
 
       transcriptCourses.value.push(newCourse);
       
@@ -1257,55 +1139,65 @@ const updatePermanentAssignment = (item, value) => {
 const saveSelectedCourses = async () => {
   saveChangesLoading.value = true;
   try {
-    const updatePromises = [];
+    // Group all changes by course ID to avoid concurrent update conflicts
+    const courseUpdates = new Map();
     
-    // Save course selections
+    // Collect course selection changes
     for (const [transcriptCourseId, courseId] of Object.entries(selectedCourseIds.value)) {
-      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
+      const courseIdNum = parseInt(transcriptCourseId);
+      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === courseIdNum);
       if (transcriptCourse && courseId) {
+        if (!courseUpdates.has(courseIdNum)) {
+          courseUpdates.set(courseIdNum, {
+            transcriptCourse,
+            changes: {}
+          });
+        }
         // Preserve existing status if it's "Approved", otherwise set to "Matched"
         const newStatus = transcriptCourse.status === "Approved" ? "Approved" : "Matched";
-        const updateData = {
-          ...transcriptCourse,
-          courseId: courseId,
-          status: newStatus,
-        };
-        updatePromises.push(
-          TranscriptCourseServices.update(transcriptCourseId, updateData)
-        );
+        courseUpdates.get(courseIdNum).changes.courseId = courseId;
+        courseUpdates.get(courseIdNum).changes.status = newStatus;
       }
     }
 
-    // Save permanent assignment changes
+    // Collect permanent assignment changes
     for (const [transcriptCourseId, permanentAssignment] of Object.entries(permanentAssignmentChanges.value)) {
-      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
+      const courseIdNum = parseInt(transcriptCourseId);
+      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === courseIdNum);
       if (transcriptCourse) {
-        // Preserve all existing data including status
-        const updateData = {
-          ...transcriptCourse,
-          permanentAssignment: permanentAssignment,
-        };
-        updatePromises.push(
-          TranscriptCourseServices.update(transcriptCourseId, updateData)
-        );
+        if (!courseUpdates.has(courseIdNum)) {
+          courseUpdates.set(courseIdNum, {
+            transcriptCourse,
+            changes: {}
+          });
+        }
+        courseUpdates.get(courseIdNum).changes.permanentAssignment = permanentAssignment;
       }
     }
 
-    // Save semester changes for all courses (including those that already have a semester)
+    // Collect semester changes
     for (const [transcriptCourseId, semesterId] of Object.entries(semesterChanges.value)) {
-      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === parseInt(transcriptCourseId));
+      const courseIdNum = parseInt(transcriptCourseId);
+      const transcriptCourse = transcriptCourses.value.find((tc) => tc.id === courseIdNum);
       if (transcriptCourse) {
-        // Allow updating semester even if course already has one, and allow setting to null
-        // Preserve all existing data including status
-        const updateData = {
-          ...transcriptCourse,
-          semesterId: semesterId || null, // Allow null to clear semester
-        };
-        updatePromises.push(
-          TranscriptCourseServices.update(transcriptCourseId, updateData)
-        );
+        if (!courseUpdates.has(courseIdNum)) {
+          courseUpdates.set(courseIdNum, {
+            transcriptCourse,
+            changes: {}
+          });
+        }
+        courseUpdates.get(courseIdNum).changes.semesterId = semesterId || null; // Allow null to clear semester
       }
     }
+
+    // Create a single update promise for each course with all its changes combined
+    const updatePromises = Array.from(courseUpdates.entries()).map(([courseIdNum, { transcriptCourse, changes }]) => {
+      const updateData = {
+        ...transcriptCourse,
+        ...changes
+      };
+      return TranscriptCourseServices.update(courseIdNum, updateData);
+    });
 
     await Promise.all(updatePromises);
     
@@ -1462,100 +1354,111 @@ onMounted(() => {
 </script>
 
 <template>
-  <v-container>
-    <v-row>
-      <v-col cols="12">
-        <h1>Transcript Courses</h1>
-        <div v-if="currentTranscript" class="mb-4">
-          <div class="d-flex align-center justify-space-between">
-            <div>
-              <h2>Transcript: {{ currentTranscript.OCIdNumber }}</h2>
-              <p>Student: {{ currentTranscript.name }}</p>
-              <p>University: {{ currentTranscript.university?.name }}</p>
-              <p><strong>Courses: {{ transcriptCourses.length }}</strong></p>
-              <p><strong>Total Hours: {{ totalHours }}</strong></p>
-            </div>
-            <div class="d-flex align-center">
-              <v-chip 
-                :color="getStatusColor(currentTranscript.status)" 
-                variant="flat"
-                class="mr-4"
-              >
-                Status: {{ currentTranscript.status || 'Not Process' }}
-              </v-chip>
-              <v-btn color="primary" @click="viewTranscript">
-                <v-icon left>mdi-file-pdf-box</v-icon>
-                View Transcript
-              </v-btn>
-            </div>
+  <div>
+    <v-container>
+      <v-toolbar>
+        <v-toolbar-title>Manage Transcript Courses</v-toolbar-title>
+        <v-spacer></v-spacer>
+        <v-btn
+          color="primary"
+          @click="router.push({ name: 'Transcripts' })"
+          class="mr-2"
+        >
+          <v-icon left>mdi-arrow-left</v-icon>
+          Back to Transcripts
+        </v-btn>
+        <v-btn color="primary" @click="openDialog()">
+          Add Transcript Course
+        </v-btn>
+      </v-toolbar>
+      <br />
+
+      <div v-if="currentTranscript" class="mb-4">
+        <div class="d-flex align-center justify-space-between">
+          <div>
+            <h2>Transcript: {{ currentTranscript.OCIdNumber }}</h2>
+            <p>Student: {{ currentTranscript.name }}</p>
+            <p>University: {{ currentTranscript.university?.name }}</p>
+            <p><strong>Courses: {{ transcriptCourses.length }}</strong></p>
+            <p><strong>Total Hours: {{ totalHours }}</strong></p>
+          </div>
+          <div class="d-flex align-center">
+            <v-chip 
+              :color="getStatusColor(currentTranscript.status)" 
+              variant="flat"
+              class="mr-4"
+            >
+              Status: {{ currentTranscript.status || 'Not Process' }}
+            </v-chip>
+            <v-btn color="primary" @click="viewTranscript">
+              <v-icon left>mdi-file-pdf-box</v-icon>
+              View Transcript
+            </v-btn>
           </div>
         </div>
-        <div class="d-flex align-center">
-          <v-btn color="primary" @click="openDialog()" class="mr-2">
-            Add Transcript Course
-          </v-btn>
-          <v-btn
-            color="info"
-            @click="processOCR"
-            :loading="ocrLoading"
-            :disabled="!currentTranscript"
-            class="mr-2"
-          >
-            <v-icon left>mdi-text-recognition</v-icon>
-            Process OCR
-          </v-btn>
-          <v-btn
-            color="error"
-            @click="deleteAllCourses"
-            :loading="deleteAllLoading"
-            class="ml-2"
-          >
-            <v-icon left>mdi-delete-sweep</v-icon>
-            Delete All Courses
-          </v-btn>
-          <v-btn
-            color="success"
-            @click="approveAllCourses"
-            :loading="approveAllLoading"
-            class="ml-2"
-          >
-            <v-icon left>mdi-check-all</v-icon>
-            Approve All
-          </v-btn>
-          <v-btn
-            color="secondary"
-            @click="matchGenericCourses"
-            :loading="matchGenericsLoading"
-            :disabled="!currentTranscript"
-            class="ml-2"
-          >
-            <v-icon left>mdi-auto-fix</v-icon>
-            Add Generics
-          </v-btn>
-          <v-btn
-            color="primary"
-            @click="saveSelectedCourses"
-            :loading="saveChangesLoading"
-              :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0) && (!semesterChanges || Object.keys(semesterChanges.value || {}).length === 0)"
-            class="ml-2"
-          >
-            <v-icon left>mdi-content-save</v-icon>
-            Save Changes
-          </v-btn>
-        </div>
-      </v-col>
-    </v-row>
+      </div>
 
-    <v-row>
-      <v-col cols="12">
-        <v-data-table
-          :headers="headers"
-          :items="sortedTranscriptCourses"
-          :loading="loading"
-          density="compact"
-          class="elevation-1 compact-table"
-          :row-props="getRowProps"
+      <div class="d-flex align-center mb-4">
+        <v-btn
+          color="info"
+          @click="processOCR"
+          :loading="ocrLoading"
+          :disabled="!currentTranscript"
+          class="mr-2"
         >
+          <v-icon left>mdi-text-recognition</v-icon>
+          Process OCR
+        </v-btn>
+        <v-btn
+          color="error"
+          @click="deleteAllCourses"
+          :loading="deleteAllLoading"
+          class="mr-2"
+        >
+          <v-icon left>mdi-delete-sweep</v-icon>
+          Delete All Courses
+        </v-btn>
+        <v-btn
+          color="success"
+          @click="approveAllCourses"
+          :loading="approveAllLoading"
+          class="mr-2"
+        >
+          <v-icon left>mdi-check-all</v-icon>
+          Approve All
+        </v-btn>
+        <v-btn
+          color="secondary"
+          @click="matchGenericCourses"
+          :loading="matchGenericsLoading"
+          :disabled="!currentTranscript"
+          class="mr-2"
+        >
+          <v-icon left>mdi-auto-fix</v-icon>
+          Add Generics
+        </v-btn>
+        <v-btn
+          color="primary"
+          @click="saveSelectedCourses"
+          :loading="saveChangesLoading"
+            :disabled="Object.keys(selectedCourseIds).length === 0 && (!permanentAssignmentChanges || Object.keys(permanentAssignmentChanges.value || {}).length === 0) && (!semesterChanges || Object.keys(semesterChanges || {}).length === 0)"
+        >
+          <v-icon left>mdi-content-save</v-icon>
+          Save Changes
+        </v-btn>
+      </div>
+
+      <v-card>
+        <v-card-title>Transcript Courses</v-card-title>
+        <v-card-text>
+          <v-data-table
+            :headers="headers"
+            :items="sortedTranscriptCourses"
+            :loading="loading"
+            density="compact"
+            class="compact-table"
+            :row-props="getRowProps"
+          >
           <template v-slot:item.actions="{ item }">
             <v-icon
               small
@@ -1645,9 +1548,9 @@ onMounted(() => {
               style="min-width: 120px;"
             ></v-select>
           </template>
-        </v-data-table>
-      </v-col>
-    </v-row>
+          </v-data-table>
+        </v-card-text>
+      </v-card>
 
     <!-- OCR Results Dialog -->
     <v-dialog v-model="ocrDialog" max-width="800px">
@@ -1904,7 +1807,8 @@ onMounted(() => {
 
     <!-- PDF Viewer Dialog -->
     <PDFViewer v-model="pdfDialog" :path="currentPdfUrl" />
-  </v-container>
+    </v-container>
+  </div>
 </template>
 
 <style scoped>

@@ -135,33 +135,34 @@ onMounted(() => {
 </script>
 
 <template>
-  <v-container>
-    <v-row>
-      <v-col cols="12">
-        <h1>Universities</h1>
+  <div>
+    <v-container>
+      <v-toolbar>
+        <v-toolbar-title>Manage Universities</v-toolbar-title>
+        <v-spacer></v-spacer>
         <v-btn color="primary" @click="openDialog()">Add University</v-btn>
-      </v-col>
-    </v-row>
+      </v-toolbar>
+      <br />
 
-    <v-row>
-      <v-col cols="12" sm="6" md="4">
-        <v-text-field
-          v-model="universityNameFilter"
-          label="Filter by University Name"
-          prepend-icon="mdi-magnify"
-          clearable
-        ></v-text-field>
-      </v-col>
-    </v-row>
+      <v-row>
+        <v-col cols="12" sm="6" md="4">
+          <v-text-field
+            v-model="universityNameFilter"
+            label="Filter by University Name"
+            prepend-icon="mdi-magnify"
+            clearable
+          ></v-text-field>
+        </v-col>
+      </v-row>
 
-    <v-row>
-      <v-col cols="12">
-        <v-data-table
-          :headers="headers"
-          :items="filteredUniversities"
-          :loading="loading"
-          class="elevation-1"
-        >
+      <v-card>
+        <v-card-title>Universities</v-card-title>
+        <v-card-text>
+          <v-data-table
+            :headers="headers"
+            :items="filteredUniversities"
+            :loading="loading"
+          >
           <template v-slot:item.actions="{ item }">
             <v-icon small class="mr-2" @click="editItem(item)">
               mdi-pencil
@@ -171,9 +172,9 @@ onMounted(() => {
           <template v-slot:[`item.oc_university_id`]="{ item }">
             {{ item.oc_university_id || "N/A" }}
           </template>
-        </v-data-table>
-      </v-col>
-    </v-row>
+          </v-data-table>
+        </v-card-text>
+      </v-card>
 
     <v-dialog v-model="dialog" max-width="500px">
       <v-card>
@@ -263,7 +264,8 @@ onMounted(() => {
         </v-card-actions>
       </v-card>
     </v-dialog>
-  </v-container>
+    </v-container>
+  </div>
 </template>
 
 <style scoped>
