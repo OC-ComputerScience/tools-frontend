@@ -2,15 +2,47 @@
 import SectionServices from "../services/sectionServices";
 import SemesterServices from "../services/semesterServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
+import UserServices from "../services/userServices";
+import UserSectionServices from "../services/userSectionServices";
 import Utils from "../config/utils.js";
 import { ref, onMounted, nextTick, computed } from "vue";
 
 const user = Utils.getStore("user");
 const courses = ref([]);
 const semesters = ref([]);
+const users = ref([]);
 const selectedSemester = ref(null);
+const selectedUser = ref(null);
 const message = ref("Select a semester to view your courses");
 const assignmentDialogs = ref({});
+
+// Check if logged-in user has admin rights
+const isAdmin = computed(() => {
+  if (!user) return false;
+  // Check isAdmin property
+  if (user.isAdmin === true) return true;
+  // Check for admin role (role id=1 or role name="Admin")
+  if (user.roles && Array.isArray(user.roles)) {
+    return user.roles.some(role => role.id === 1 || role.name === "Admin" || role.name === "admin");
+  }
+  return false;
+});
+
+// Computed property for selected semester name
+const selectedSemesterName = computed(() => {
+  if (!selectedSemester.value) return '';
+  const semester = semesters.value.find(s => s.id === selectedSemester.value);
+  return semester ? semester.name : '';
+});
+
+// Computed property for selected faculty name
+const selectedFacultyName = computed(() => {
+  if (isAdmin.value && selectedUser.value) {
+    const faculty = users.value.find(u => u.id === selectedUser.value);
+    return faculty ? faculty.fullName : '';
+  }
+  return user ? `${user.fName} ${user.lName}` : '';
+});
 
 const retrieveSemesters = () => {
   SemesterServices.getAll()
@@ -27,6 +59,25 @@ const retrieveSemesters = () => {
     });
 };
 
+const retrieveUsers = () => {
+  UserServices.getAllUsers()
+    .then((response) => {
+      // Add fullName property for display and sort by last name
+      users.value = response.data
+        .map((user) => ({
+          ...user,
+          fullName: `${user.fName} ${user.lName}`,
+        }))
+        .sort((a, b) => {
+          // Sort by last name (lName) alphabetically
+          return a.lName.localeCompare(b.lName);
+        });
+    })
+    .catch((e) => {
+      console.error("Error loading users:", e);
+    });
+};
+
 const retrieveCourses = async () => {
   if (!selectedSemester.value) {
     courses.value = [];
@@ -34,7 +85,17 @@ const retrieveCourses = async () => {
   }
 
   try {
-    const response = await SectionServices.getSectionsByUserEmail(user.email, {
+    // If admin and selectedUser is set, use selectedUser; otherwise use logged-in user
+    let userEmail = user.email;
+    if (isAdmin.value && selectedUser.value) {
+      // Find the selected user's email
+      const selectedUserData = users.value.find(u => u.id === selectedUser.value);
+      if (selectedUserData) {
+        userEmail = selectedUserData.email;
+      }
+    }
+
+    const response = await SectionServices.getSectionsByUserEmail(userEmail, {
       semesterId: selectedSemester.value,
     });
 
@@ -357,6 +418,9 @@ const removeAssignment = async (course) => {
 
 onMounted(() => {
   retrieveSemesters();
+  if (isAdmin.value) {
+    retrieveUsers();
+  }
 });
 </script>
 
@@ -395,14 +459,29 @@ onMounted(() => {
       <v-card>
         <v-card-title>Select Semester for Canvas Courses</v-card-title>
         <v-card-text>
-          <v-select
-            v-model="selectedSemester"
-            :items="semesters"
-            item-title="name"
-            item-value="id"
-            label="Semester"
-            @update:model-value="retrieveCourses"
-          ></v-select>
+          <v-row>
+            <v-col cols="12" :md="isAdmin ? 6 : 12">
+              <v-select
+                v-model="selectedSemester"
+                :items="semesters"
+                item-title="name"
+                item-value="id"
+                label="Semester"
+                @update:model-value="retrieveCourses"
+              ></v-select>
+            </v-col>
+            <v-col v-if="isAdmin" cols="12" md="6">
+              <v-select
+                v-model="selectedUser"
+                :items="users"
+                item-title="fullName"
+                item-value="id"
+                label="Select Faculty (optional)"
+                clearable
+                @update:model-value="retrieveCourses"
+              ></v-select>
+            </v-col>
+          </v-row>
         </v-card-text>
       </v-card>
 
@@ -410,12 +489,12 @@ onMounted(() => {
 
       <!-- Assignment Status Display -->
       <v-card v-if="selectedSemester && assignmentStatus !== null" class="mb-4">
-        <v-card-text>
+        <v-card-text style="background-color: #f5f5f5;">
           <div style="display: flex; justify-content: center">
             <div
               class="text-h6"
               :style="{
-                color: assignmentStatus === 'allAssigned' ? 'green' : 'orange',
+                color: assignmentStatus === 'allAssigned' ? 'green' : 'red',
               }"
             >
               {{
@@ -429,8 +508,10 @@ onMounted(() => {
       </v-card>
 
       <v-card v-if="selectedSemester">
-        <v-card-title>Canvas Courses for Selected Semester</v-card-title>
-        <v-card-text>
+        <v-card-title>
+          Canvas Courses - {{ selectedSemesterName }} - {{ selectedFacultyName }}
+        </v-card-title>
+        <v-card-text style="background-color: #f5f5f5;">
           <b>{{ message }}</b>
         </v-card-text>
         <v-table>
