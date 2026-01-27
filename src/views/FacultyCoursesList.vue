@@ -16,14 +16,21 @@ const selectedUser = ref(null);
 const message = ref("Select a semester to view your courses");
 const assignmentDialogs = ref({});
 
-// Check if logged-in user has admin rights
+// Check if logged-in user has admin or department chair rights
 const isAdmin = computed(() => {
   if (!user) return false;
   // Check isAdmin property
   if (user.isAdmin === true) return true;
-  // Check for admin role (role id=1 or role name="Admin")
+  // Check for admin or department chair role
   if (user.roles && Array.isArray(user.roles)) {
-    return user.roles.some(role => role.id === 1 || role.name === "Admin" || role.name === "admin");
+    return user.roles.some(role => {
+      const roleName = (role.name || '').toLowerCase();
+      return role.id === 1 || 
+             roleName === "admin" || 
+             roleName === "department chair" || 
+             roleName === "dept chair" ||
+             roleName === "chair";
+    });
   }
   return false;
 });
@@ -451,7 +458,7 @@ onMounted(() => {
             If there are courses that you taught in a previous semester that you
             don't teach in Fall 2026, you can also select the past semester and
             assign the Blackboard course from that semester to import into the
-            Canvas course so the course data is available for the future.
+            Canvas course of the same semester in the past so the course data is available for the future.
           </div>
         </v-card-text>
       </v-card>
