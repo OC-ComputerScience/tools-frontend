@@ -435,7 +435,7 @@ onMounted(() => {
   <div>
     <v-container>
       <v-toolbar>
-        <v-toolbar-title>Import Courses</v-toolbar-title>
+        <v-toolbar-title>Import Courses from Blackboard into Canvas</v-toolbar-title>
       </v-toolbar>
       <br />
 
@@ -443,21 +443,20 @@ onMounted(() => {
       <v-card class="mb-4">
         <v-card-text>
           <div class="text-body-1">
-            We are able to export course from Blackboard and import them into
-            Canvas. The import works reasonbaly well but you will have to work
-            on it some to get the course set up fully in Canvas.
+            We are able to automatically export courses from Blackboard and import them into
+            Canvas but we need you to tell us what courses from Blackboard you want exported into Canvas. The import works reasonbaly well but it does take some work to review and organize the imported data to get the course ready. The recommended plan
+            is to import a course as a starting point. If you decide later you don't want
+            what you imported you can easily delete it in the Canvas course.  You can also specify not to import a course if that is what you want.  This tool will let you specify want you want to import.
           </div>
           <br />
           <div class="text-body-1">
-            For each course you teach in Fall 2026, assign a Blackboard course
-            from a previous semester that you want to have imported into it or
-            select that you don't need a Blackboard course imported.
+            For every course you teach in Fall or Summer 2026, assign a Blackboard course
+            from a previous semester that you want to assign to be exported and imported into Canvas or
+            select that you don't want to assign a Blackboard course to be imported.
           </div>
           <br />
           <div class="text-body-1">
-            If there are courses that you taught in a previous semester that you
-            don't teach in Fall 2026, you can also select the past semester and
-            assign the Blackboard course from that semester to import into the
+            For courses that you will teach in the futere but not in Fall or Summer 2026,   you can also select the past semester and assign the Blackboard course from that semester to import into the
             Canvas course of the same semester in the past so the course data is available for the future.
           </div>
         </v-card-text>
