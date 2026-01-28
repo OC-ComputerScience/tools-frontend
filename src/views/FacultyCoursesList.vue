@@ -2,15 +2,54 @@
 import SectionServices from "../services/sectionServices";
 import SemesterServices from "../services/semesterServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
+import UserServices from "../services/userServices";
+import UserSectionServices from "../services/userSectionServices";
 import Utils from "../config/utils.js";
 import { ref, onMounted, nextTick, computed } from "vue";
 
 const user = Utils.getStore("user");
 const courses = ref([]);
 const semesters = ref([]);
+const users = ref([]);
 const selectedSemester = ref(null);
+const selectedUser = ref(null);
 const message = ref("Select a semester to view your courses");
 const assignmentDialogs = ref({});
+
+// Check if logged-in user has admin or department chair rights
+const isAdmin = computed(() => {
+  if (!user) return false;
+  // Check isAdmin property
+  if (user.isAdmin === true) return true;
+  // Check for admin or department chair role
+  if (user.roles && Array.isArray(user.roles)) {
+    return user.roles.some(role => {
+      const roleName = (role.name || '').toLowerCase();
+      return role.id === 1 || 
+             roleName === "admin" || 
+             roleName === "department chair" || 
+             roleName === "dept chair" ||
+             roleName === "chair";
+    });
+  }
+  return false;
+});
+
+// Computed property for selected semester name
+const selectedSemesterName = computed(() => {
+  if (!selectedSemester.value) return '';
+  const semester = semesters.value.find(s => s.id === selectedSemester.value);
+  return semester ? semester.name : '';
+});
+
+// Computed property for selected faculty name
+const selectedFacultyName = computed(() => {
+  if (isAdmin.value && selectedUser.value) {
+    const faculty = users.value.find(u => u.id === selectedUser.value);
+    return faculty ? faculty.fullName : '';
+  }
+  return user ? `${user.fName} ${user.lName}` : '';
+});
 
 const retrieveSemesters = () => {
   SemesterServices.getAll()
@@ -27,6 +66,25 @@ const retrieveSemesters = () => {
     });
 };
 
+const retrieveUsers = () => {
+  UserServices.getAllUsers()
+    .then((response) => {
+      // Add fullName property for display and sort by last name
+      users.value = response.data
+        .map((user) => ({
+          ...user,
+          fullName: `${user.fName} ${user.lName}`,
+        }))
+        .sort((a, b) => {
+          // Sort by last name (lName) alphabetically
+          return a.lName.localeCompare(b.lName);
+        });
+    })
+    .catch((e) => {
+      console.error("Error loading users:", e);
+    });
+};
+
 const retrieveCourses = async () => {
   if (!selectedSemester.value) {
     courses.value = [];
@@ -34,7 +92,17 @@ const retrieveCourses = async () => {
   }
 
   try {
-    const response = await SectionServices.getSectionsByUserEmail(user.email, {
+    // If admin and selectedUser is set, use selectedUser; otherwise use logged-in user
+    let userEmail = user.email;
+    if (isAdmin.value && selectedUser.value) {
+      // Find the selected user's email
+      const selectedUserData = users.value.find(u => u.id === selectedUser.value);
+      if (selectedUserData) {
+        userEmail = selectedUserData.email;
+      }
+    }
+
+    const response = await SectionServices.getSectionsByUserEmail(userEmail, {
       semesterId: selectedSemester.value,
     });
 
@@ -357,6 +425,9 @@ const removeAssignment = async (course) => {
 
 onMounted(() => {
   retrieveSemesters();
+  if (isAdmin.value) {
+    retrieveUsers();
+  }
 });
 </script>
 
@@ -364,7 +435,7 @@ onMounted(() => {
   <div>
     <v-container>
       <v-toolbar>
-        <v-toolbar-title>Import Courses</v-toolbar-title>
+        <v-toolbar-title>Import Courses from Blackboard into Canvas</v-toolbar-title>
       </v-toolbar>
       <br />
 
@@ -372,22 +443,21 @@ onMounted(() => {
       <v-card class="mb-4">
         <v-card-text>
           <div class="text-body-1">
-            We are able to export course from Blackboard and import them into
-            Canvas. The import works reasonbaly well but you will have to work
-            on it some to get the course set up fully in Canvas.
+            We are able to automatically export courses from Blackboard and import them into
+            Canvas but we need you to tell us what courses from Blackboard you want exported into Canvas. The import works reasonbaly well but it does take some work to review and organize the imported data to get the course ready. The recommended plan
+            is to import a course as a starting point. If you decide later you don't want
+            what you imported you can easily delete it in the Canvas course.  You can also specify not to import a course if that is what you want.  This tool will let you specify want you want to import.
           </div>
           <br />
           <div class="text-body-1">
-            For each course you teach in Fall 2026, assign a Blackboard course
-            from a previous semester that you want to have imported into it or
-            select that you don't need a Blackboard course imported.
+            For every course you teach in Fall or Summer 2026, assign a Blackboard course
+            from a previous semester that you want to assign to be exported and imported into Canvas or
+            select that you don't want to assign a Blackboard course to be imported.
           </div>
           <br />
           <div class="text-body-1">
-            If there are courses that you taught in a previous semester that you
-            don't teach in Fall 2026, you can also select the past semester and
-            assign the Blackboard course from that semester to import into the
-            Canvas course so the course data is available for the future.
+            For courses that you will teach in the futere but not in Fall or Summer 2026,   you can also select the past semester and assign the Blackboard course from that semester to import into the
+            Canvas course of the same semester in the past so the course data is available for the future.
           </div>
         </v-card-text>
       </v-card>
@@ -395,14 +465,29 @@ onMounted(() => {
       <v-card>
         <v-card-title>Select Semester for Canvas Courses</v-card-title>
         <v-card-text>
-          <v-select
-            v-model="selectedSemester"
-            :items="semesters"
-            item-title="name"
-            item-value="id"
-            label="Semester"
-            @update:model-value="retrieveCourses"
-          ></v-select>
+          <v-row>
+            <v-col cols="12" :md="isAdmin ? 6 : 12">
+              <v-select
+                v-model="selectedSemester"
+                :items="semesters"
+                item-title="name"
+                item-value="id"
+                label="Semester"
+                @update:model-value="retrieveCourses"
+              ></v-select>
+            </v-col>
+            <v-col v-if="isAdmin" cols="12" md="6">
+              <v-select
+                v-model="selectedUser"
+                :items="users"
+                item-title="fullName"
+                item-value="id"
+                label="Select Faculty (optional)"
+                clearable
+                @update:model-value="retrieveCourses"
+              ></v-select>
+            </v-col>
+          </v-row>
         </v-card-text>
       </v-card>
 
@@ -410,12 +495,12 @@ onMounted(() => {
 
       <!-- Assignment Status Display -->
       <v-card v-if="selectedSemester && assignmentStatus !== null" class="mb-4">
-        <v-card-text>
+        <v-card-text style="background-color: #f5f5f5;">
           <div style="display: flex; justify-content: center">
             <div
               class="text-h6"
               :style="{
-                color: assignmentStatus === 'allAssigned' ? 'green' : 'orange',
+                color: assignmentStatus === 'allAssigned' ? 'green' : 'red',
               }"
             >
               {{
@@ -429,8 +514,10 @@ onMounted(() => {
       </v-card>
 
       <v-card v-if="selectedSemester">
-        <v-card-title>Canvas Courses for Selected Semester</v-card-title>
-        <v-card-text>
+        <v-card-title>
+          Canvas Courses - {{ selectedSemesterName }} - {{ selectedFacultyName }}
+        </v-card-title>
+        <v-card-text style="background-color: #f5f5f5;">
           <b>{{ message }}</b>
         </v-card-text>
         <v-table>
