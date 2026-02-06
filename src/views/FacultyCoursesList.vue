@@ -51,15 +51,52 @@ const selectedFacultyName = computed(() => {
   return user ? `${user.fName} ${user.lName}` : '';
 });
 
+// Computed property for semester-specific instructions based on start date
+const semesterInstructionText = computed(() => {
+  if (!selectedSemester.value) return '';
+  const semester = semesters.value.find(s => s.id === selectedSemester.value);
+  if (!semester || !semester.startDate) return '';
+  const startDate = new Date(semester.startDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  startDate.setHours(0, 0, 0, 0);
+  if (startDate > today) {
+    return 'For each course, assign a course to be copied into Canvas from a past semester in Blackboard or indicate that you don\'t want to import a course.';
+  }
+  return 'For courses in this semester you may assign a Blackboard course in the same semester to be copied into Canvas for future use in setting up courses.';
+});
+
+// Computed property to check if selected semester is in the past
+const isPastSemester = computed(() => {
+  if (!selectedSemester.value) return false;
+  const semester = semesters.value.find(s => s.id === selectedSemester.value);
+  if (!semester || !semester.startDate) return false;
+  const startDate = new Date(semester.startDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  startDate.setHours(0, 0, 0, 0);
+  return startDate <= today;
+});
+
+const MIN_SEMESTER_START = new Date('2023-01-01');
+MIN_SEMESTER_START.setHours(0, 0, 0, 0);
+
 const retrieveSemesters = () => {
   SemesterServices.getAll()
     .then((response) => {
-      // Sort semesters by startDate in descending order (newest first)
-      semesters.value = response.data.sort((a, b) => {
-        const dateA = new Date(a.startDate);
-        const dateB = new Date(b.startDate);
-        return dateB - dateA; // Descending order (newest first)
-      });
+      // Filter to semesters with start date on or after 1/1/2023, then sort by startDate descending (newest first)
+      semesters.value = response.data
+        .filter((s) => {
+          if (!s.startDate) return false;
+          const startDate = new Date(s.startDate);
+          startDate.setHours(0, 0, 0, 0);
+          return startDate >= MIN_SEMESTER_START;
+        })
+        .sort((a, b) => {
+          const dateA = new Date(a.startDate);
+          const dateB = new Date(b.startDate);
+          return dateB - dateA; // Descending order (newest first)
+        });
     })
     .catch((e) => {
       message.value = e.response?.data?.message || "Error loading semesters";
@@ -282,9 +319,15 @@ const openAssignmentDialog = async (course) => {
 const loadAvailableSemesters = (course) => {
   SemesterServices.getAll()
     .then((response) => {
-      course.availableSemesters = response.data.filter(
-        (s) => s.id !== course.semesterId
-      );
+      course.availableSemesters = response.data
+        .filter((s) => {
+          if (s.id === course.semesterId) return false;
+          if (!s.startDate) return false;
+          const startDate = new Date(s.startDate);
+          startDate.setHours(0, 0, 0, 0);
+          return startDate >= MIN_SEMESTER_START;
+        })
+        .sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
       course.selectedSemesterForAssignment = null;
       course.availableCourses = [];
     })
@@ -435,32 +478,9 @@ onMounted(() => {
   <div>
     <v-container>
       <v-toolbar>
-        <v-toolbar-title>Import Courses from Blackboard into Canvas</v-toolbar-title>
+        <v-toolbar-title>Import Courses into Canvas from Blackboard</v-toolbar-title>
       </v-toolbar>
       <br />
-
-      <!-- Instructions -->
-      <v-card class="mb-4">
-        <v-card-text>
-          <div class="text-body-1">
-            We are able to automatically export courses from Blackboard and import them into
-            Canvas but we need you to tell us what courses from Blackboard you want exported into Canvas. The import works reasonbaly well but it does take some work to review and organize the imported data to get the course ready. The recommended plan
-            is to import a course as a starting point. If you decide later you don't want
-            what you imported you can easily delete it in the Canvas course.  You can also specify not to import a course if that is what you want.  This tool will let you specify want you want to import.
-          </div>
-          <br />
-          <div class="text-body-1">
-            For every course you teach in Fall or Summer 2026, assign a Blackboard course
-            from a previous semester that you want to assign to be exported and imported into Canvas or
-            select that you don't want to assign a Blackboard course to be imported.
-          </div>
-          <br />
-          <div class="text-body-1">
-            For courses that you will teach in the futere but not in Fall or Summer 2026,   you can also select the past semester and assign the Blackboard course from that semester to import into the
-            Canvas course of the same semester in the past so the course data is available for the future.
-          </div>
-        </v-card-text>
-      </v-card>
 
       <v-card>
         <v-card-title>Select Semester for Canvas Courses</v-card-title>
@@ -488,6 +508,13 @@ onMounted(() => {
               ></v-select>
             </v-col>
           </v-row>
+          <v-row v-if="semesterInstructionText">
+            <v-col cols="12">
+              <div class="text-body-1 font-weight-bold">
+                {{ semesterInstructionText }}
+              </div>
+            </v-col>
+          </v-row>
         </v-card-text>
       </v-card>
 
@@ -500,13 +527,15 @@ onMounted(() => {
             <div
               class="text-h6"
               :style="{
-                color: assignmentStatus === 'allAssigned' ? 'green' : 'red',
+                color: isPastSemester ? 'black' : (assignmentStatus === 'allAssigned' ? 'green' : 'red'),
               }"
             >
               {{
-                assignmentStatus === "allAssigned"
-                  ? "All courses assigned"
-                  : "More courses to assign"
+                isPastSemester
+                  ? "Select courses to Assign"
+                  : (assignmentStatus === "allAssigned"
+                    ? "All courses assigned"
+                    : "More courses to assign")
               }}
             </div>
           </div>
@@ -517,7 +546,7 @@ onMounted(() => {
         <v-card-title>
           Canvas Courses - {{ selectedSemesterName }} - {{ selectedFacultyName }}
         </v-card-title>
-        <v-card-text style="background-color: #f5f5f5;">
+        <v-card-text v-if="message !== 'Select a semester to view your courses'" style="background-color: #f5f5f5; text-align: center;">
           <b>{{ message }}</b>
         </v-card-text>
         <v-table>
@@ -634,6 +663,7 @@ onMounted(() => {
                   {{ course.assignedCourse ? "Change" : "Assign" }}
                 </v-btn>
                 <v-btn
+                  v-if="!isPastSemester"
                   small
                   color="grey"
                   class="ml-2"
@@ -718,7 +748,7 @@ onMounted(() => {
             <v-btn text @click="assignmentDialogs[course.id] = false"
               >Cancel</v-btn
             >
-            <v-btn color="grey" @click="markNoAssign(course)">No Assign</v-btn>
+            <v-btn v-if="!isPastSemester" color="grey" @click="markNoAssign(course)">No Assign</v-btn>
             <v-btn color="primary" @click="assignCourse(course)">Assign</v-btn>
           </v-card-actions>
         </v-card>
