@@ -90,10 +90,24 @@ const accessibleMenuOptions = computed(() => {
   });
 });
 
-// Get default route based on user
+// Check if user is Admin
+const isAdminUser = computed(() => {
+  if (!user.value) return false;
+  if (user.value.isAdmin === true) return true;
+  if (user.value.roles && Array.isArray(user.value.roles)) {
+    return user.value.roles.some(
+      (role) =>
+        role.id === 1 ||
+        (role.name || "").toLowerCase() === "admin"
+    );
+  }
+  return false;
+});
+
+// Get default route based on user: Admin -> dashboard, Faculty -> facultyDashboard
 const defaultRoute = computed(() => {
   if (!user.value) return { name: "login" };
-  return { name: "dashboard" };
+  return isAdminUser.value ? { name: "dashboard" } : { name: "facultyDashboard" };
 });
 
 const logout = () => {
