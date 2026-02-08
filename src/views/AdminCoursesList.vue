@@ -4,9 +4,13 @@ import SemesterServices from "../services/semesterServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
 import UserServices from "../services/userServices";
 import UserSectionServices from "../services/userSectionServices";
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
+
+const ITEMS_PER_PAGE = 25;
 
 const courses = ref([]);
+const currentPage = ref(1);
+const itemsPerPage = ref(ITEMS_PER_PAGE);
 const semesters = ref([]);
 const users = ref([]);
 const selectedSemester = ref(null);
@@ -17,10 +21,19 @@ const totalAssignments = ref(0);
 const facultyWithNoAssignments = ref(0);
 const facultyWithAssignments = ref(0);
 
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(courses.value.length / itemsPerPage.value))
+);
+
+const paginatedCourses = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value;
+  return courses.value.slice(start, start + itemsPerPage.value);
+});
+
 const retrieveSemesters = () => {
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = response.data;
+      semesters.value = response.data.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
       if (response.data.length > 0) {
         selectedSemester.value = response.data[0].id;
         retrieveCourses();
@@ -79,16 +92,19 @@ const exportAssignedCourses = async () => {
     const allAssignedCoursesResponse = await AssignedCourseServices.getAllAssignedCourses({});
     const allAssignedCourses = allAssignedCoursesResponse.data || [];
     
-    // Filter to only assigned courses for sections in the selected semester
-    const semesterAssignedCourses = allAssignedCourses.filter(ac => sectionIds.includes(ac.sectionId));
+    // Filter to only assigned courses for sections in the selected semester that have an assignedSectionId
+    // (exclude "Not Assignment Needed" records - nothing to export for those)
+    const semesterAssignedCourses = allAssignedCourses.filter(
+      ac => sectionIds.includes(ac.sectionId) && ac.assignedSectionId != null
+    );
 
     if (semesterAssignedCourses.length === 0) {
-      alert("No assigned courses found for the selected semester");
+      alert("No assigned courses with a source course to export for the selected semester");
       return;
     }
 
     // Get unique assigned section IDs to fetch their details with term info
-    const assignedSectionIds = [...new Set(semesterAssignedCourses.map(ac => ac.assignedSectionId))];
+    const assignedSectionIds = [...new Set(semesterAssignedCourses.map(ac => ac.assignedSectionId).filter(Boolean))];
     
     // Fetch all assigned sections with their term info
     const assignedSectionsResponses = await Promise.all(
@@ -176,9 +192,224 @@ const exportAssignedCourses = async () => {
   }
 };
 
+const exportCanvasCourses = async () => {
+  if (!selectedSemester.value) {
+    alert("Please select a semester first");
+    return;
+  }
+
+  try {
+    // Get the selected semester details - fetch full details to ensure we have startDate and endDate
+    let selectedSemesterData = semesters.value.find(t => t.id === selectedSemester.value);
+    if (!selectedSemesterData) {
+      alert("Semester not found");
+      return;
+    }
+
+    // If startDate or endDate are missing, fetch the full semester details
+    if (!selectedSemesterData.startDate || !selectedSemesterData.endDate) {
+      try {
+        const semesterResponse = await SemesterServices.get(selectedSemester.value);
+        selectedSemesterData = semesterResponse.data;
+      } catch (error) {
+        console.error('Error fetching semester details:', error);
+        alert('Error fetching semester details. Please ensure the semester has start and end dates.');
+        return;
+      }
+    }
+
+    // Get all sections for the selected semester
+    const sectionsResponse = await SectionServices.getAllSections({ semesterId: selectedSemester.value });
+    const sections = sectionsResponse.data || [];
+    const sectionIds = sections.map(s => s.id);
+
+    if (sectionIds.length === 0) {
+      alert("No sections found for the selected semester");
+      return;
+    }
+
+    // Get all assigned courses
+    const allAssignedCoursesResponse = await AssignedCourseServices.getAllAssignedCourses({});
+    const allAssignedCourses = allAssignedCoursesResponse.data || [];
+    
+    // Filter to only assigned courses for sections in the selected semester
+    const semesterAssignedCourses = allAssignedCourses.filter(ac => sectionIds.includes(ac.sectionId));
+
+    if (semesterAssignedCourses.length === 0) {
+      alert("No assigned courses found for the selected semester");
+      return;
+    }
+
+    // Create a map of section ID to section data
+    const sectionMap = new Map();
+    sections.forEach(s => {
+      sectionMap.set(s.id, s);
+    });
+
+    // Get all user sections for the semester sections
+    const allUserSectionsResponse = await UserSectionServices.getAll();
+    const allUserSections = allUserSectionsResponse.data || [];
+    const semesterUserSections = allUserSections.filter(us => sectionIds.includes(us.sectionId));
+
+    // Create a map of sectionId to user_id (for enrollments)
+    const sectionToUserIdMap = new Map();
+    semesterUserSections.forEach(us => {
+      if (!sectionToUserIdMap.has(us.sectionId)) {
+        sectionToUserIdMap.set(us.sectionId, []);
+      }
+      sectionToUserIdMap.get(us.sectionId).push(us.userId);
+    });
+
+    // Format date for CSV (YYYY-MM-DD)
+    const formatDate = (date) => {
+      if (!date) return '';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '';
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    // Sanitize semester name for filename (remove invalid characters)
+    const sanitizeFilename = (name) => {
+      return name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    };
+
+    // Escape CSV values
+    const escapeCsvValue = (value) => {
+      if (value === null || value === undefined) return '';
+      const stringValue = String(value);
+      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    // Build courses CSV
+    const coursesCsvRows = [];
+    coursesCsvRows.push(['course_id', 'short_name', 'long_name', 'term_id', 'status', 'account_id', 'start_date', 'end_date'].join(','));
+
+    semesterAssignedCourses.forEach((assignedCourse) => {
+      const section = sectionMap.get(assignedCourse.sectionId);
+      if (!section) return;
+
+      const sectionSemester = section.semester || selectedSemesterData;
+      
+      // course_id: same as export assigned data export (<semester name>_<course number>_<section number>)
+      const courseId = `${sectionSemester.name}_${section.courseNumber}_${section.courseSection}`;
+      
+      // short_name: course number
+      const shortName = section.courseNumber || '';
+      
+      // long_name: course name
+      const longName = section.courseDescription || '';
+      
+      // term_id: semester name
+      const termId = sectionSemester.name;
+      
+      // status: 'active'
+      const status = 'active';
+      
+      // account_id: same as accountID in export assigned data export
+      const accountId = section.accountId || '';
+      
+      // start_date: semester start date
+      const startDate = formatDate(selectedSemesterData.startDate);
+      
+      // end_date: semester end date
+      const endDate = formatDate(selectedSemesterData.endDate);
+
+      coursesCsvRows.push([
+        escapeCsvValue(courseId),
+        escapeCsvValue(shortName),
+        escapeCsvValue(longName),
+        escapeCsvValue(termId),
+        escapeCsvValue(status),
+        escapeCsvValue(accountId),
+        escapeCsvValue(startDate),
+        escapeCsvValue(endDate)
+      ].join(','));
+    });
+
+    // Build enrollments CSV
+    const enrollmentsCsvRows = [];
+    enrollmentsCsvRows.push(['course_id', 'user_id', 'role', 'section_id', 'status'].join(','));
+
+    semesterAssignedCourses.forEach((assignedCourse) => {
+      const section = sectionMap.get(assignedCourse.sectionId);
+      if (!section) return;
+
+      const sectionSemester = section.semester || selectedSemesterData;
+      
+      // course_id: same as export assigned data export
+      const courseId = `${sectionSemester.name}_${section.courseNumber}_${section.courseSection}`;
+      
+      // Get user_id from user_sections table
+      const userIds = sectionToUserIdMap.get(section.id) || [];
+      
+      // Create enrollment row for each user
+      userIds.forEach(userId => {
+        // user_id: user_id connected to the sectionId in the user_sections table
+        const userIdValue = userId;
+        
+        // role: 'teacher'
+        const role = 'teacher';
+        
+        // section_id: blank
+        const sectionIdValue = '';
+        
+        // status: 'active'
+        const status = 'active';
+
+        enrollmentsCsvRows.push([
+          escapeCsvValue(courseId),
+          escapeCsvValue(userIdValue),
+          escapeCsvValue(role),
+          escapeCsvValue(sectionIdValue),
+          escapeCsvValue(status)
+        ].join(','));
+      });
+    });
+
+    // Create CSV content
+    const coursesCsvContent = coursesCsvRows.join('\n');
+    const enrollmentsCsvContent = enrollmentsCsvRows.join('\n');
+
+    // Sanitize semester name for filename
+    const sanitizedSemesterName = sanitizeFilename(selectedSemesterData.name);
+
+    // Download courses CSV
+    const coursesBlob = new Blob([coursesCsvContent], { type: 'text/csv;charset=utf-8;' });
+    const coursesLink = document.createElement('a');
+    const coursesUrl = URL.createObjectURL(coursesBlob);
+    coursesLink.setAttribute('href', coursesUrl);
+    coursesLink.setAttribute('download', `courses.${sanitizedSemesterName}.csv`);
+    coursesLink.style.visibility = 'hidden';
+    document.body.appendChild(coursesLink);
+    coursesLink.click();
+    document.body.removeChild(coursesLink);
+
+    // Download enrollments CSV
+    const enrollmentsBlob = new Blob([enrollmentsCsvContent], { type: 'text/csv;charset=utf-8;' });
+    const enrollmentsLink = document.createElement('a');
+    const enrollmentsUrl = URL.createObjectURL(enrollmentsBlob);
+    enrollmentsLink.setAttribute('href', enrollmentsUrl);
+    enrollmentsLink.setAttribute('download', `enrollments.${sanitizedSemesterName}.csv`);
+    enrollmentsLink.style.visibility = 'hidden';
+    document.body.appendChild(enrollmentsLink);
+    enrollmentsLink.click();
+    document.body.removeChild(enrollmentsLink);
+  } catch (error) {
+    console.error('Error exporting Canvas courses:', error);
+    alert('Error exporting Canvas courses. Please check the console for details.');
+  }
+};
+
 const retrieveCourses = async () => {
   if (!selectedSemester.value) {
     courses.value = [];
+    currentPage.value = 1;
     totalSections.value = 0;
     totalAssignments.value = 0;
     facultyWithNoAssignments.value = 0;
@@ -202,6 +433,11 @@ const retrieveCourses = async () => {
       allSections = allSections.filter(s => userSectionIds.has(s.id));
     }
 
+    // Filter to only courses that have an assignment record
+    const hasAssignment = (c) =>
+      Array.isArray(c.assignedCourse) ? c.assignedCourse.length > 0 : !!c.assignedCourse;
+    allSections = allSections.filter(hasAssignment);
+
     courses.value = allSections.sort((a, b) => {
       // Sort by courseNumber first, then by courseSection in ascending order
       const courseNumberCompare = a.courseNumber.localeCompare(
@@ -221,6 +457,7 @@ const retrieveCourses = async () => {
         sensitivity: "base",
       });
     });
+    currentPage.value = 1;
     calculateStats();
   } catch (e) {
     message.value = e.response?.data?.message || "Error loading courses";
@@ -396,8 +633,15 @@ onMounted(() => {
           <v-btn
             color="primary"
             @click="exportAssignedCourses"
+            class="mr-2"
           >
             Export Assigned Courses
+          </v-btn>
+          <v-btn
+            color="primary"
+            @click="exportCanvasCourses"
+          >
+            Export Canvas Courses
           </v-btn>
         </v-card-title>
         <v-card-text>
@@ -414,15 +658,25 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="course in courses" :key="course.id">
+            <tr v-for="course in paginatedCourses" :key="course.id">
               <td>{{ course.courseNumber }}</td>
               <td>{{ course.courseSection }}</td>
               <td>{{ course.courseDescription }}</td>
-              <td>{{ course.assignedCourse ? "Assigned" : "Not Assigned" }}</td>
-              <td>{{ course.assignedCourse ? 1 : 0 }}</td>
+              <td>{{ (Array.isArray(course.assignedCourse) ? course.assignedCourse.length > 0 : !!course.assignedCourse) ? "Assigned" : "Not Assigned" }}</td>
+              <td>{{ Array.isArray(course.assignedCourse) ? course.assignedCourse.length : (course.assignedCourse ? 1 : 0) }}</td>
             </tr>
           </tbody>
         </v-table>
+        <v-pagination
+          v-if="courses.length > itemsPerPage"
+          v-model="currentPage"
+          :length="totalPages"
+          :total-visible="7"
+          class="pa-4"
+        ></v-pagination>
+        <div v-if="courses.length > 0" class="pa-3 text-caption text-medium-emphasis">
+          Showing {{ (currentPage - 1) * itemsPerPage + 1 }}-{{ Math.min(currentPage * itemsPerPage, courses.length) }} of {{ courses.length }} courses
+        </div>
       </v-card>
     </v-container>
   </div>

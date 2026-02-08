@@ -2,28 +2,123 @@
 import SectionServices from "../services/sectionServices";
 import SemesterServices from "../services/semesterServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
+import UserServices from "../services/userServices";
+import UserSectionServices from "../services/userSectionServices";
 import Utils from "../config/utils.js";
 import { ref, onMounted, nextTick, computed } from "vue";
 
 const user = Utils.getStore("user");
 const courses = ref([]);
 const semesters = ref([]);
+const users = ref([]);
 const selectedSemester = ref(null);
+const selectedUser = ref(null);
 const message = ref("Select a semester to view your courses");
 const assignmentDialogs = ref({});
+
+// Check if logged-in user has admin or department chair rights
+const isAdmin = computed(() => {
+  if (!user) return false;
+  // Check isAdmin property
+  if (user.isAdmin === true) return true;
+  // Check for admin or department chair role
+  if (user.roles && Array.isArray(user.roles)) {
+    return user.roles.some(role => {
+      const roleName = (role.name || '').toLowerCase();
+      return role.id === 1 || 
+             roleName === "admin" || 
+             roleName === "department chair" || 
+             roleName === "dept chair" ||
+             roleName === "chair";
+    });
+  }
+  return false;
+});
+
+// Computed property for selected semester name
+const selectedSemesterName = computed(() => {
+  if (!selectedSemester.value) return '';
+  const semester = semesters.value.find(s => s.id === selectedSemester.value);
+  return semester ? semester.name : '';
+});
+
+// Computed property for selected faculty name
+const selectedFacultyName = computed(() => {
+  if (isAdmin.value && selectedUser.value) {
+    const faculty = users.value.find(u => u.id === selectedUser.value);
+    return faculty ? faculty.fullName : '';
+  }
+  return user ? `${user.fName} ${user.lName}` : '';
+});
+
+// Computed property for semester-specific instructions based on start date
+const semesterInstructionText = computed(() => {
+  if (!selectedSemester.value) return '';
+  const semester = semesters.value.find(s => s.id === selectedSemester.value);
+  if (!semester || !semester.startDate) return '';
+  const startDate = new Date(semester.startDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  startDate.setHours(0, 0, 0, 0);
+  if (startDate > today) {
+    return 'For each course, assign a course to be copied into Canvas from a past semester in Blackboard or indicate that you don\'t want to import a course.';
+  }
+  return 'For courses in this semester you may assign a Blackboard course in the same semester to be copied into Canvas for future use in setting up courses.\n\nNote: when you click assign there is no dialog displayed – the course is assigned to itself.';
+});
+
+// Computed property to check if selected semester is in the past
+const isPastSemester = computed(() => {
+  if (!selectedSemester.value) return false;
+  const semester = semesters.value.find(s => s.id === selectedSemester.value);
+  if (!semester || !semester.startDate) return false;
+  const startDate = new Date(semester.startDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  startDate.setHours(0, 0, 0, 0);
+  return startDate <= today;
+});
+
+const MIN_SEMESTER_START = new Date('2023-01-01');
+MIN_SEMESTER_START.setHours(0, 0, 0, 0);
 
 const retrieveSemesters = () => {
   SemesterServices.getAll()
     .then((response) => {
-      // Sort semesters by startDate in descending order (newest first)
-      semesters.value = response.data.sort((a, b) => {
-        const dateA = new Date(a.startDate);
-        const dateB = new Date(b.startDate);
-        return dateB - dateA; // Descending order (newest first)
-      });
+      // Filter to semesters with start date on or after 1/1/2023, then sort by startDate descending (newest first)
+      semesters.value = response.data
+        .filter((s) => {
+          if (!s.startDate) return false;
+          const startDate = new Date(s.startDate);
+          startDate.setHours(0, 0, 0, 0);
+          return startDate >= MIN_SEMESTER_START;
+        })
+        .sort((a, b) => {
+          const dateA = new Date(a.startDate);
+          const dateB = new Date(b.startDate);
+          return dateB - dateA; // Descending order (newest first)
+        });
     })
     .catch((e) => {
       message.value = e.response?.data?.message || "Error loading semesters";
+    });
+};
+
+const retrieveUsers = () => {
+  UserServices.getAllUsers()
+    .then((response) => {
+      // Add fullName property for display and sort by last name
+      users.value = response.data
+        .map((user) => ({
+          ...user,
+          fullName: `${user.fName} ${user.lName}`,
+        }))
+        .sort((a, b) => {
+          // Sort by last name (lName) alphabetically
+          return a.lName.localeCompare(b.lName);
+        });
+    })
+    .catch((e) => {
+      console.error("Error loading users:", e);
     });
 };
 
@@ -34,7 +129,17 @@ const retrieveCourses = async () => {
   }
 
   try {
-    const response = await SectionServices.getSectionsByUserEmail(user.email, {
+    // If admin and selectedUser is set, use selectedUser; otherwise use logged-in user
+    let userEmail = user.email;
+    if (isAdmin.value && selectedUser.value) {
+      // Find the selected user's email
+      const selectedUserData = users.value.find(u => u.id === selectedUser.value);
+      if (selectedUserData) {
+        userEmail = selectedUserData.email;
+      }
+    }
+
+    const response = await SectionServices.getSectionsByUserEmail(userEmail, {
       semesterId: selectedSemester.value,
     });
 
@@ -163,6 +268,13 @@ const assignmentStatus = computed(() => {
   return allAssigned ? "allAssigned" : "moreToAssign";
 });
 
+// Helper to format a date string for display (e.g., "1/15/2024")
+const formatDateDisplay = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+};
+
 // Helper function to check if a semester started in the past
 const isSemesterInPast = (semester) => {
   if (!semester || !semester.startDate) return false;
@@ -214,9 +326,15 @@ const openAssignmentDialog = async (course) => {
 const loadAvailableSemesters = (course) => {
   SemesterServices.getAll()
     .then((response) => {
-      course.availableSemesters = response.data.filter(
-        (s) => s.id !== course.semesterId
-      );
+      course.availableSemesters = response.data
+        .filter((s) => {
+          if (s.id === course.semesterId) return false;
+          if (!s.startDate) return false;
+          const startDate = new Date(s.startDate);
+          startDate.setHours(0, 0, 0, 0);
+          return startDate >= MIN_SEMESTER_START;
+        })
+        .sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
       course.selectedSemesterForAssignment = null;
       course.availableCourses = [];
     })
@@ -264,7 +382,9 @@ const loadCoursesForSemester = async (course, semesterId) => {
         c.courseDescription || "No description"
       }`,
     }));
-    course.selectedCourseForAssignment = null;
+    course.selectedCourseForAssignment = course.availableCourses.length === 1
+      ? course.availableCourses[0].id
+      : null;
 
     if (course.availableCourses.length === 0 && response.data.length > 0) {
       console.warn(
@@ -357,6 +477,9 @@ const removeAssignment = async (course) => {
 
 onMounted(() => {
   retrieveSemesters();
+  if (isAdmin.value) {
+    retrieveUsers();
+  }
 });
 </script>
 
@@ -364,45 +487,43 @@ onMounted(() => {
   <div>
     <v-container>
       <v-toolbar>
-        <v-toolbar-title>Import Courses</v-toolbar-title>
+        <v-toolbar-title>Import Courses into Canvas from Blackboard</v-toolbar-title>
       </v-toolbar>
       <br />
-
-      <!-- Instructions -->
-      <v-card class="mb-4">
-        <v-card-text>
-          <div class="text-body-1">
-            We are able to export course from Blackboard and import them into
-            Canvas. The import works reasonbaly well but you will have to work
-            on it some to get the course set up fully in Canvas.
-          </div>
-          <br />
-          <div class="text-body-1">
-            For each course you teach in Fall 2026, assign a Blackboard course
-            from a previous semester that you want to have imported into it or
-            select that you don't need a Blackboard course imported.
-          </div>
-          <br />
-          <div class="text-body-1">
-            If there are courses that you taught in a previous semester that you
-            don't teach in Fall 2026, you can also select the past semester and
-            assign the Blackboard course from that semester to import into the
-            Canvas course so the course data is available for the future.
-          </div>
-        </v-card-text>
-      </v-card>
 
       <v-card>
         <v-card-title>Select Semester for Canvas Courses</v-card-title>
         <v-card-text>
-          <v-select
-            v-model="selectedSemester"
-            :items="semesters"
-            item-title="name"
-            item-value="id"
-            label="Semester"
-            @update:model-value="retrieveCourses"
-          ></v-select>
+          <v-row>
+            <v-col cols="12" :md="isAdmin ? 6 : 12">
+              <v-select
+                v-model="selectedSemester"
+                :items="semesters"
+                item-title="name"
+                item-value="id"
+                label="Semester"
+                @update:model-value="retrieveCourses"
+              ></v-select>
+            </v-col>
+            <v-col v-if="isAdmin" cols="12" md="6">
+              <v-select
+                v-model="selectedUser"
+                :items="users"
+                item-title="fullName"
+                item-value="id"
+                label="Select Faculty (optional)"
+                clearable
+                @update:model-value="retrieveCourses"
+              ></v-select>
+            </v-col>
+          </v-row>
+          <v-row v-if="semesterInstructionText">
+            <v-col cols="12">
+              <div class="text-body-1 font-weight-bold" style="white-space: pre-line">
+                {{ semesterInstructionText }}
+              </div>
+            </v-col>
+          </v-row>
         </v-card-text>
       </v-card>
 
@@ -410,18 +531,20 @@ onMounted(() => {
 
       <!-- Assignment Status Display -->
       <v-card v-if="selectedSemester && assignmentStatus !== null" class="mb-4">
-        <v-card-text>
+        <v-card-text style="background-color: #f5f5f5;">
           <div style="display: flex; justify-content: center">
             <div
               class="text-h6"
               :style="{
-                color: assignmentStatus === 'allAssigned' ? 'green' : 'orange',
+                color: isPastSemester ? 'black' : (assignmentStatus === 'allAssigned' ? 'green' : 'red'),
               }"
             >
               {{
-                assignmentStatus === "allAssigned"
-                  ? "All courses assigned"
-                  : "More courses to assign"
+                isPastSemester
+                  ? "Select courses to Assign"
+                  : (assignmentStatus === "allAssigned"
+                    ? "All courses assigned"
+                    : "More courses to assign")
               }}
             </div>
           </div>
@@ -429,10 +552,15 @@ onMounted(() => {
       </v-card>
 
       <v-card v-if="selectedSemester">
-        <v-card-title>Canvas Courses for Selected Semester</v-card-title>
-        <v-card-text>
+        <v-card-title>
+          Canvas Courses - {{ selectedSemesterName }} - {{ selectedFacultyName }}
+        </v-card-title>
+        <v-card-text v-if="message !== 'Select a semester to view your courses'" style="background-color: #f5f5f5; text-align: center;">
           <b>{{ message }}</b>
         </v-card-text>
+        <div v-if="courses.length > 0" class="pa-3 text-body-2 text-medium-emphasis">
+          Note: For merged courses only the course that is the primary course is listed.
+        </div>
         <v-table>
           <thead>
             <tr>
@@ -481,7 +609,7 @@ onMounted(() => {
                       </div>
                       <div v-if="course.semester?.startDate">
                         <strong>Start Date:</strong>
-                        {{ course.semester.startDate }}
+                        {{ formatDateDisplay(course.semester.startDate) }}
                       </div>
                       <div v-if="course.assignedCourse">
                         <strong>Assigned To:</strong>
@@ -547,6 +675,7 @@ onMounted(() => {
                   {{ course.assignedCourse ? "Change" : "Assign" }}
                 </v-btn>
                 <v-btn
+                  v-if="!isPastSemester"
                   small
                   color="grey"
                   class="ml-2"
@@ -613,7 +742,7 @@ onMounted(() => {
               :items="course.availableSemesters || []"
               item-title="name"
               item-value="id"
-              label="Select Semester"
+              label="Select semester to copy from"
               @update:model-value="loadCoursesForSemester(course, $event)"
             ></v-select>
 
@@ -631,7 +760,7 @@ onMounted(() => {
             <v-btn text @click="assignmentDialogs[course.id] = false"
               >Cancel</v-btn
             >
-            <v-btn color="grey" @click="markNoAssign(course)">No Assign</v-btn>
+            <v-btn v-if="!isPastSemester" color="grey" @click="markNoAssign(course)">No Assign</v-btn>
             <v-btn color="primary" @click="assignCourse(course)">Assign</v-btn>
           </v-card-actions>
         </v-card>

@@ -39,6 +39,19 @@ const loginWithGoogle = () => {
   });
 };
 
+const isAdminUser = (userData) => {
+  if (!userData) return false;
+  if (userData.isAdmin === true) return true;
+  if (userData.roles && Array.isArray(userData.roles)) {
+    return userData.roles.some(
+      (role) =>
+        role.id === 1 ||
+        (role.name || "").toLowerCase() === "admin"
+    );
+  }
+  return false;
+};
+
 const handleCredentialResponse = async (response) => {
   let token = {
     credential: response.credential,
@@ -49,9 +62,10 @@ const handleCredentialResponse = async (response) => {
       Utils.setStore("user", user.value);
       fName.value = user.value.fName;
       lName.value = user.value.lName;
-      
-      // Redirect to dashboard
-      router.push({ name: "dashboard" });
+
+      // Redirect: Admin to Admin Home, Faculty to Faculty Home
+      const routeName = isAdminUser(user.value) ? "dashboard" : "facultyDashboard";
+      router.push({ name: routeName });
     })
     .catch((error) => {
       console.log("error", error);

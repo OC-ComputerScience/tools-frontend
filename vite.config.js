@@ -15,6 +15,9 @@ export default () => {
     server: {
       host: "localhost",
       port: 8081,
+      watch: {
+        usePolling: true,
+      },
     },
 
     base: baseURL,

@@ -5,6 +5,7 @@ import SectionServices from "../services/sectionServices";
 import MeetingTimeServices from "../services/meetingTimeServices";
 import UserServices from "../services/userServices";
 import UserSectionServices from "../services/userSectionServices";
+import SectionLocationServices from "../services/sectionLocationServices";
 import Utils from "../config/utils.js";
 import jsPDF from "jspdf";
 
@@ -12,6 +13,8 @@ const semesters = ref([]);
 const users = ref([]);
 const selectedSemester = ref(null);
 const selectedUser = ref(null);
+const selectedLocation = ref(null);
+const locations = ref([]);
 const coursePrefix1 = ref("");
 const coursePrefix2 = ref("");
 const courses = ref([]);
@@ -19,6 +22,7 @@ const meetingTimes = ref([]);
 const message = ref("Select a semester and course prefix(es) to view schedule");
 const uniquePrefixes = ref([]);
 const userSections = ref([]); // Sections mapped to the selected user
+const sectionLocations = ref([]); // Map of sectionId to locations
 const showOfficeHoursDialog = ref(false);
 const officeHours = ref([]);
 const newOfficeHour = ref({
@@ -42,6 +46,10 @@ const importMeetingTimesResults = ref(null);
 const importingSections = ref(false);
 const importingUserSections = ref(false);
 const importingMeetingTimes = ref(false);
+const importSectionLocationsDialog = ref(false);
+const importSectionLocationsFile = ref(null);
+const importSectionLocationsResults = ref(null);
+const importingSectionLocations = ref(false);
 
 // Check if user is admin (role id=1)
 const isAdmin = computed(() => {
@@ -49,7 +57,7 @@ const isAdmin = computed(() => {
   if (!user || !user.roles || !Array.isArray(user.roles)) {
     return false;
   }
-  return user.roles.some(role => role.id === 1);
+  return user.roles.some((role) => role.id === 1);
 });
 
 // Color schemes for the two prefixes
@@ -85,7 +93,12 @@ const retrieveSemesters = () => {
 const retrieveUsers = () => {
   UserServices.getAllUsers()
     .then((response) => {
-      users.value = response.data;
+      users.value = response.data.sort((a, b) => {
+        // Sort by last name first, then by first name
+        const lastNameCompare = (a.lName || "").localeCompare(b.lName || "");
+        if (lastNameCompare !== 0) return lastNameCompare;
+        return (a.fName || "").localeCompare(b.fName || "");
+      });
     })
     .catch((e) => {
       console.error("Error loading users:", e);
@@ -98,6 +111,8 @@ const retrieveCourses = async () => {
     uniquePrefixes.value = [];
     meetingTimes.value = [];
     userSections.value = [];
+    locations.value = [];
+    sectionLocations.value = [];
     message.value = "Select a semester to view courses";
     return;
   }
@@ -117,20 +132,47 @@ const retrieveCourses = async () => {
       allSections = response.data;
     }
 
+    // Load all section locations for this semester's sections
+    try {
+      const locationsResponse = await SectionLocationServices.getAllSectionLocations();
+      const allLocations = locationsResponse.data || [];
+      
+      // Filter to only locations for sections in this semester
+      const sectionIds = new Set(allSections.map(s => s.id));
+      sectionLocations.value = allLocations.filter(loc => sectionIds.has(loc.sectionId));
+      
+      // Extract unique location names
+      const uniqueLocationNames = new Set();
+      sectionLocations.value.forEach(loc => {
+        if (loc.locationName) {
+          uniqueLocationNames.add(loc.locationName);
+        }
+      });
+      locations.value = Array.from(uniqueLocationNames).sort();
+      console.log(`Loaded ${locations.value.length} unique location(s)`);
+    } catch (e) {
+      console.error("Error loading section locations:", e);
+      sectionLocations.value = [];
+      locations.value = [];
+    }
+
     // If a user is selected, fetch their mapped sections and filter
     if (selectedUser.value) {
       try {
-        const userSectionsResponse = await UserSectionServices.getSectionsByUser(selectedUser.value);
+        const userSectionsResponse =
+          await UserSectionServices.getSectionsByUser(selectedUser.value);
         userSections.value = userSectionsResponse.data || [];
         console.log(`User has ${userSections.value.length} mapped section(s)`);
 
         // Filter sections to only show those mapped to the user
-        const userSectionIds = new Set(userSections.value.map(s => s.id));
+        const userSectionIds = new Set(userSections.value.map((s) => s.id));
         courses.value = allSections.filter((section) => {
           return userSectionIds.has(section.id);
         });
 
-        console.log(`Filtered to ${courses.value.length} section(s) matching user's sections`);
+        console.log(
+          `Filtered to ${courses.value.length} section(s) matching user's sections`,
+        );
       } catch (e) {
         console.error("Error loading user sections:", e);
         // If error loading user sections, show all sections (fallback behavior)
@@ -152,13 +194,13 @@ const retrieveCourses = async () => {
     });
     uniquePrefixes.value = Array.from(prefixes).sort();
 
-    // If a prefix is selected or a user is selected, load meeting times
-    if (coursePrefix1.value || coursePrefix2.value || selectedUser.value) {
+    // If a prefix is selected, a user is selected, or a location is selected, load meeting times
+    if (coursePrefix1.value || coursePrefix2.value || selectedUser.value || selectedLocation.value) {
       await loadMeetingTimes();
     } else {
       // Update message when courses are loaded but no prefixes or user selected
       if (courses.value.length > 0) {
-        message.value = `Loaded ${courses.value.length} course(s). Select course prefix(es) or a user to view schedule.`;
+        message.value = `Loaded ${courses.value.length} course(s). Select course prefix(es), a user, or a location to view schedule.`;
       } else {
         if (selectedUser.value) {
           message.value = `No sections found for selected user in this semester.`;
@@ -172,7 +214,11 @@ const retrieveCourses = async () => {
     courses.value = [];
     uniquePrefixes.value = [];
     userSections.value = [];
-    message.value = e.response?.data?.message || "Error loading courses. Please check the browser console for details.";
+    locations.value = [];
+    sectionLocations.value = [];
+    message.value =
+      e.response?.data?.message ||
+      "Error loading courses. Please check the browser console for details.";
   }
 };
 
@@ -183,17 +229,32 @@ const loadMeetingTimes = async () => {
     return;
   }
 
-  // If user is selected, don't require prefix - show all courses for that user
-  // Otherwise, require at least one prefix
-  if (!selectedUser.value && !coursePrefix1.value && !coursePrefix2.value) {
+  // Require at least one filter: user, prefix, or location
+  if (!selectedUser.value && !coursePrefix1.value && !coursePrefix2.value && !selectedLocation.value) {
     meetingTimes.value = [];
-    message.value = "Select course prefix(es) or a user to view schedule";
+    message.value = "Select course prefix(es), a user, or a location to view schedule";
     return;
   }
 
-  // Filter courses by prefixes (if prefixes are selected)
-  // If user is selected but no prefixes, show all courses for that user
+  // Get section IDs that have the selected location (if location is selected)
+  let sectionIdsWithLocation = null;
+  if (selectedLocation.value) {
+    sectionIdsWithLocation = new Set(
+      sectionLocations.value
+        .filter(loc => loc.locationName === selectedLocation.value)
+        .map(loc => loc.sectionId)
+    );
+  }
+
+  // Filter courses by prefixes and/or location
   const filteredCourses = courses.value.filter((course) => {
+    // If location is selected, filter by location
+    if (selectedLocation.value) {
+      if (!sectionIdsWithLocation.has(course.id)) {
+        return false;
+      }
+    }
+    
     // If prefixes are selected, filter by prefixes
     if (coursePrefix1.value || coursePrefix2.value) {
       if (!course.courseNumber || course.courseNumber.length < 4) return false;
@@ -203,13 +264,15 @@ const loadMeetingTimes = async () => {
         (coursePrefix2.value && prefix === coursePrefix2.value.toUpperCase())
       );
     }
-    // If no prefixes but user is selected, show all courses
+    // If no prefixes but user or location is selected, show all matching courses
     return true;
   });
 
   if (filteredCourses.length === 0) {
     meetingTimes.value = [];
-    if (selectedUser.value) {
+    if (selectedLocation.value) {
+      message.value = "No courses found for selected location";
+    } else if (selectedUser.value) {
       message.value = "No courses found for selected user";
     } else {
       message.value = "No courses found for selected prefix(es)";
@@ -223,7 +286,7 @@ const loadMeetingTimes = async () => {
     for (const course of filteredCourses) {
       try {
         const response = await MeetingTimeServices.getMeetingTimeBySectionId(
-          course.id
+          course.id,
         );
         if (response.data && Array.isArray(response.data)) {
           // Determine which prefix this course belongs to (if prefixes are selected)
@@ -274,10 +337,10 @@ const loadMeetingTimes = async () => {
     }
     meetingTimes.value = allMeetingTimes;
     const prefix1Count = allMeetingTimes.filter(
-      (mt) => mt.prefixIndex === 1
+      (mt) => mt.prefixIndex === 1,
     ).length;
     const prefix2Count = allMeetingTimes.filter(
-      (mt) => mt.prefixIndex === 2
+      (mt) => mt.prefixIndex === 2,
     ).length;
     message.value = `Loaded ${allMeetingTimes.length} meeting time(s) for ${filteredCourses.length} course(s) (Prefix 1: ${prefix1Count}, Prefix 2: ${prefix2Count})`;
   } catch (e) {
@@ -286,19 +349,28 @@ const loadMeetingTimes = async () => {
 };
 
 // Watch for changes in selected semester
-watch(selectedSemester, (newValue, oldValue) => {
-  console.log("Semester selection changed:", { newValue, oldValue });
-  if (selectedSemester.value) {
-    retrieveCourses();
-  } else {
-    courses.value = [];
-    uniquePrefixes.value = [];
-    meetingTimes.value = [];
-    coursePrefix1.value = "";
-    coursePrefix2.value = "";
-    message.value = "Select a semester and course prefix(es) to view schedule";
-  }
-}, { immediate: false });
+watch(
+  selectedSemester,
+  (newValue, oldValue) => {
+    console.log("Semester selection changed:", { newValue, oldValue });
+    if (selectedSemester.value) {
+      selectedLocation.value = null;
+      retrieveCourses();
+    } else {
+      courses.value = [];
+      uniquePrefixes.value = [];
+      meetingTimes.value = [];
+      locations.value = [];
+      sectionLocations.value = [];
+      coursePrefix1.value = "";
+      coursePrefix2.value = "";
+      selectedLocation.value = null;
+      message.value =
+        "Select a semester and course prefix(es) to view schedule";
+    }
+  },
+  { immediate: false },
+);
 
 // Watch for changes in selected user
 watch(selectedUser, () => {
@@ -310,19 +382,35 @@ watch(selectedUser, () => {
   }
 });
 
+// Watch for changes in selected location
+watch(selectedLocation, () => {
+  if (selectedSemester.value) {
+    if (coursePrefix1.value || coursePrefix2.value || selectedUser.value || selectedLocation.value) {
+      loadMeetingTimes();
+    } else {
+      meetingTimes.value = [];
+      if (courses.value.length > 0) {
+        message.value = `Loaded ${courses.value.length} course(s). Select course prefix(es), a user, or a location to view schedule.`;
+      } else {
+        message.value = "Select course prefix(es), a user, or a location to view schedule";
+      }
+    }
+  }
+});
+
 // Watch for changes in course prefixes
 watch([coursePrefix1, coursePrefix2], () => {
   if (selectedSemester.value) {
-    // If prefixes or user is selected, load meeting times
-    if (coursePrefix1.value || coursePrefix2.value || selectedUser.value) {
+    // If prefixes, user, or location is selected, load meeting times
+    if (coursePrefix1.value || coursePrefix2.value || selectedUser.value || selectedLocation.value) {
       loadMeetingTimes();
     } else {
       meetingTimes.value = [];
       // Update message when prefixes are cleared
       if (courses.value.length > 0) {
-        message.value = `Loaded ${courses.value.length} course(s). Select course prefix(es) or a user to view schedule.`;
+        message.value = `Loaded ${courses.value.length} course(s). Select course prefix(es), a user, or a location to view schedule.`;
       } else {
-        message.value = "Select course prefix(es) or a user to view schedule";
+        message.value = "Select course prefix(es), a user, or a location to view schedule";
       }
     }
   }
@@ -368,6 +456,53 @@ const timeSlots = computed(() => {
 // User selection is optional - prefixes are available when term is selected and courses are loaded
 const prefixesEnabled = computed(() => {
   return selectedSemester.value && uniquePrefixes.value.length > 0;
+});
+
+// Computed property to get courses without meeting times
+const coursesWithoutTimes = computed(() => {
+  if (!selectedSemester.value) return [];
+  if (!selectedUser.value && !coursePrefix1.value && !coursePrefix2.value && !selectedLocation.value)
+    return [];
+
+  // Get section IDs that have the selected location (if location is selected)
+  let sectionIdsWithLocation = null;
+  if (selectedLocation.value) {
+    sectionIdsWithLocation = new Set(
+      sectionLocations.value
+        .filter(loc => loc.locationName === selectedLocation.value)
+        .map(loc => loc.sectionId)
+    );
+  }
+
+  // Get the filtered courses (same logic as loadMeetingTimes)
+  const filteredCourses = courses.value.filter((course) => {
+    // If location is selected, filter by location
+    if (selectedLocation.value) {
+      if (!sectionIdsWithLocation.has(course.id)) {
+        return false;
+      }
+    }
+    
+    if (coursePrefix1.value || coursePrefix2.value) {
+      if (!course.courseNumber || course.courseNumber.length < 4) return false;
+      const prefix = course.courseNumber.substring(0, 4).toUpperCase();
+      return (
+        (coursePrefix1.value && prefix === coursePrefix1.value.toUpperCase()) ||
+        (coursePrefix2.value && prefix === coursePrefix2.value.toUpperCase())
+      );
+    }
+    return true;
+  });
+
+  // Get IDs of courses that have meeting times
+  const coursesWithTimesIds = new Set(
+    meetingTimes.value.map((mt) => mt.section?.id),
+  );
+
+  // Return courses that don't have meeting times
+  return filteredCourses.filter(
+    (course) => !coursesWithTimesIds.has(course.id),
+  );
 });
 
 // Helper function to format hour for display
@@ -497,7 +632,7 @@ const generatePDF = () => {
   // Get user and term information
   const selectedUserData = users.value.find((u) => u.id === selectedUser.value);
   const selectedSemesterData = semesters.value.find(
-    (s) => s.id === selectedSemester.value
+    (s) => s.id === selectedSemester.value,
   );
 
   if (!selectedUserData || !selectedSemesterData) {
@@ -568,7 +703,7 @@ const generatePDF = () => {
     if (!courseColorMap.has(courseKey)) {
       courseColorMap.set(
         courseKey,
-        courseColors[colorIndex % courseColors.length]
+        courseColors[colorIndex % courseColors.length],
       );
       colorIndex++;
     }
@@ -627,14 +762,14 @@ const generatePDF = () => {
     startX,
     yPos - rowHeight,
     startX + timeColWidth + colWidth * numDays,
-    yPos - rowHeight
+    yPos - rowHeight,
   );
   doc.line(startX, yPos - rowHeight - 5, startX, yPos);
   doc.line(
     startX + timeColWidth,
     yPos - rowHeight - 5,
     startX + timeColWidth,
-    yPos
+    yPos,
   );
 
   xPos = startX + timeColWidth;
@@ -646,7 +781,7 @@ const generatePDF = () => {
     startX + timeColWidth + colWidth * numDays,
     yPos - rowHeight - 5,
     startX + timeColWidth + colWidth * numDays,
-    yPos
+    yPos,
   );
 
   // Generate time slots for PDF (1-hour slots, not 30-minute)
@@ -780,7 +915,7 @@ const generatePDF = () => {
         slotRowStartYPos - 4 + row * rowHeight,
         timeColWidth,
         rowHeight,
-        "S"
+        "S",
       );
     }
 
@@ -828,7 +963,7 @@ const generatePDF = () => {
             type: "meeting",
             data: mt,
             id: `mt-${mt.id}`,
-          }))
+          })),
         );
       }
 
@@ -906,7 +1041,7 @@ const generatePDF = () => {
               currentItemYPos - 4,
               colWidth,
               actualRowHeight,
-              "FD"
+              "FD",
             );
           }
 
@@ -921,12 +1056,12 @@ const generatePDF = () => {
             doc.text(
               displayName.substring(0, 15),
               xPos + 1,
-              currentItemYPos - 1
+              currentItemYPos - 1,
             );
             doc.setFont(undefined, "normal");
             doc.setFontSize(6);
             const timeText = `${formatTime(item.data.startTime)}-${formatTime(
-              item.data.endTime
+              item.data.endTime,
             )}`;
             doc.text(timeText.substring(0, 15), xPos + 1, currentItemYPos + 2);
           } else {
@@ -935,14 +1070,14 @@ const generatePDF = () => {
             doc.text(
               courseText.substring(0, 12),
               xPos + 1,
-              currentItemYPos - 1
+              currentItemYPos - 1,
             );
 
             // Add time
             doc.setFont(undefined, "normal");
             doc.setFontSize(6);
             const timeText = `${formatTime(item.data.startTime)}-${formatTime(
-              item.data.endTime
+              item.data.endTime,
             )}`;
             doc.text(timeText.substring(0, 15), xPos + 1, currentItemYPos + 2);
           }
@@ -975,7 +1110,7 @@ const generatePDF = () => {
           slotRowStartYPos - 4 + row * rowHeight,
           colWidth,
           rowHeight,
-          "S"
+          "S",
         );
         tempXPos += colWidth;
       });
@@ -1016,7 +1151,7 @@ const importSections = async () => {
     message.value = "Please select a CSV file";
     return;
   }
-  if (!importSectionsFile.value.name.endsWith('.csv')) {
+  if (!importSectionsFile.value.name.endsWith(".csv")) {
     message.value = "Please select a CSV file";
     return;
   }
@@ -1026,7 +1161,10 @@ const importSections = async () => {
 
   try {
     // Pass null for semesterId since we'll use term_id from CSV
-    const response = await SectionServices.importSectionsCSV(importSectionsFile.value, null);
+    const response = await SectionServices.importSectionsCSV(
+      importSectionsFile.value,
+      null,
+    );
     importSectionsResults.value = {
       added: response.data.added || 0,
       errors: response.data.errors || [],
@@ -1035,7 +1173,8 @@ const importSections = async () => {
     await retrieveCourses();
   } catch (e) {
     console.error("Import sections error:", e);
-    const errorMessage = e.response?.data?.message || e.message || "Unknown error occurred";
+    const errorMessage =
+      e.response?.data?.message || e.message || "Unknown error occurred";
     message.value = `Error: ${errorMessage}`;
     importSectionsResults.value = {
       added: 0,
@@ -1063,7 +1202,7 @@ const importUserSections = async () => {
     message.value = "Please select a CSV file";
     return;
   }
-  if (!importUserSectionsFile.value.name.endsWith('.csv')) {
+  if (!importUserSectionsFile.value.name.endsWith(".csv")) {
     message.value = "Please select a CSV file";
     return;
   }
@@ -1072,7 +1211,9 @@ const importUserSections = async () => {
   importUserSectionsResults.value = null;
 
   try {
-    const response = await UserSectionServices.importCSV(importUserSectionsFile.value);
+    const response = await UserSectionServices.importCSV(
+      importUserSectionsFile.value,
+    );
     importUserSectionsResults.value = {
       added: response.data.added || 0,
       skipped: response.data.skipped || 0,
@@ -1085,7 +1226,8 @@ const importUserSections = async () => {
     message.value = statusMessage;
     await retrieveCourses();
   } catch (e) {
-    message.value = e.response?.data?.message || "Error importing user sections";
+    message.value =
+      e.response?.data?.message || "Error importing user sections";
     importUserSectionsResults.value = {
       added: 0,
       skipped: 0,
@@ -1113,7 +1255,7 @@ const importMeetingTimes = async () => {
     message.value = "Please select a CSV file";
     return;
   }
-  if (!importMeetingTimesFile.value.name.endsWith('.csv')) {
+  if (!importMeetingTimesFile.value.name.endsWith(".csv")) {
     message.value = "Please select a CSV file";
     return;
   }
@@ -1122,7 +1264,9 @@ const importMeetingTimes = async () => {
   importMeetingTimesResults.value = null;
 
   try {
-    const response = await MeetingTimeServices.importMeetingTimesCSV(importMeetingTimesFile.value);
+    const response = await MeetingTimeServices.importMeetingTimesCSV(
+      importMeetingTimesFile.value,
+    );
     importMeetingTimesResults.value = {
       added: response.data.added || 0,
       errors: response.data.errors || [],
@@ -1130,13 +1274,66 @@ const importMeetingTimes = async () => {
     message.value = `Import completed: ${importMeetingTimesResults.value.added} meeting times added`;
     await retrieveCourses();
   } catch (e) {
-    message.value = e.response?.data?.message || "Error importing meeting times";
+    message.value =
+      e.response?.data?.message || "Error importing meeting times";
     importMeetingTimesResults.value = {
       added: 0,
       errors: [e.response?.data?.message || "Unknown error"],
     };
   } finally {
     importingMeetingTimes.value = false;
+  }
+};
+
+const openImportSectionLocationsDialog = () => {
+  importSectionLocationsDialog.value = true;
+  importSectionLocationsFile.value = null;
+  importSectionLocationsResults.value = null;
+};
+
+const closeImportSectionLocationsDialog = () => {
+  importSectionLocationsDialog.value = false;
+  importSectionLocationsFile.value = null;
+  importSectionLocationsResults.value = null;
+};
+
+const importSectionLocations = async () => {
+  if (!importSectionLocationsFile.value) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+  if (!importSectionLocationsFile.value.name.endsWith(".csv")) {
+    message.value = "Please select a CSV file";
+    return;
+  }
+
+  importingSectionLocations.value = true;
+  importSectionLocationsResults.value = null;
+
+  try {
+    const response = await SectionLocationServices.importSectionLocationsCSV(
+      importSectionLocationsFile.value,
+    );
+    importSectionLocationsResults.value = {
+      added: response.data.added || 0,
+      skipped: response.data.skipped || 0,
+      errors: response.data.errors || [],
+    };
+    let statusMessage = `Import completed: ${importSectionLocationsResults.value.added} section locations added`;
+    if (importSectionLocationsResults.value.skipped > 0) {
+      statusMessage += `, ${importSectionLocationsResults.value.skipped} skipped`;
+    }
+    message.value = statusMessage;
+  } catch (e) {
+    message.value =
+      e.response?.data?.message || "Error importing section locations";
+    importSectionLocationsResults.value = {
+      added: 0,
+      skipped: 0,
+      errors: [e.response?.data?.message || "Unknown error"],
+    };
+  } finally {
+    importingSectionLocations.value = false;
   }
 };
 
@@ -1159,22 +1356,40 @@ onMounted(() => {
         <v-card-title>Import Data</v-card-title>
         <v-card-text>
           <v-row>
-            <v-col cols="12" md="4">
+            <v-col cols="12" md="3">
               <v-btn color="primary" block @click="openImportSectionsDialog">
                 <v-icon left>mdi-upload</v-icon>
                 Import Sections
               </v-btn>
             </v-col>
-            <v-col cols="12" md="4">
-              <v-btn color="primary" block @click="openImportUserSectionsDialog">
+            <v-col cols="12" md="3">
+              <v-btn
+                color="primary"
+                block
+                @click="openImportUserSectionsDialog"
+              >
                 <v-icon left>mdi-upload</v-icon>
                 Import User Sections
               </v-btn>
             </v-col>
-            <v-col cols="12" md="4">
-              <v-btn color="primary" block @click="openImportMeetingTimesDialog">
+            <v-col cols="12" md="3">
+              <v-btn
+                color="primary"
+                block
+                @click="openImportMeetingTimesDialog"
+              >
                 <v-icon left>mdi-upload</v-icon>
                 Import Meeting Times
+              </v-btn>
+            </v-col>
+            <v-col cols="12" md="3">
+              <v-btn
+                color="primary"
+                block
+                @click="openImportSectionLocationsDialog"
+              >
+                <v-icon left>mdi-upload</v-icon>
+                Import Section Locations
               </v-btn>
             </v-col>
           </v-row>
@@ -1182,7 +1397,7 @@ onMounted(() => {
       </v-card>
 
       <v-card>
-        <v-card-title>Select Semester, User, and Course Prefixes</v-card-title>
+        <v-card-title>Select Semester, User, Location, and Course Prefixes</v-card-title>
         <v-card-text>
           <v-row>
             <v-col cols="12" md="3">
@@ -1195,35 +1410,63 @@ onMounted(() => {
               ></v-select>
             </v-col>
             <v-col cols="12" md="3">
-              <v-select
+              <v-autocomplete
                 v-model="selectedUser"
                 :items="
                   users.map((u) => ({
-                    title: `${u.fName} ${u.lName} (${u.email})`,
+                    title: `${u.lName}, ${u.fName} (${u.email})`,
                     value: u.id,
+                    lName: u.lName,
+                    fName: u.fName,
+                    email: u.email,
                   }))
                 "
                 item-title="title"
                 item-value="value"
                 label="Select User (Optional)"
                 :disabled="!selectedSemester"
+                :custom-filter="
+                  (itemText, queryText, item) => {
+                    if (!queryText) return true;
+                    const query = queryText.toLowerCase();
+                    const lName = (item.raw.lName || '').toLowerCase();
+                    const fName = (item.raw.fName || '').toLowerCase();
+                    const email = (item.raw.email || '').toLowerCase();
+                    return (
+                      lName.includes(query) ||
+                      fName.includes(query) ||
+                      email.includes(query)
+                    );
+                  }
+                "
                 clearable
-              ></v-select>
+              ></v-autocomplete>
+            </v-col>
+            <v-col cols="12" md="3">
+              <v-autocomplete
+                v-model="selectedLocation"
+                :items="locations"
+                label="Select Location (Optional)"
+                :disabled="!selectedSemester || locations.length === 0"
+                clearable
+              ></v-autocomplete>
             </v-col>
             <v-col cols="12" md="3">
               <v-select
                 v-model="coursePrefix1"
                 :items="uniquePrefixes"
-                label="Course Prefix 1 (first 4 characters)"
+                label="Course Prefix 1 (Optional)"
                 :disabled="!prefixesEnabled"
                 clearable
               ></v-select>
             </v-col>
+          </v-row>
+          <v-row>
             <v-col cols="12" md="3">
               <v-select
                 v-model="coursePrefix2"
                 :items="uniquePrefixes"
-                label="Course Prefix 2 (first 4 characters)"
+                label="Course Prefix 2 (Optional)"
                 :disabled="!prefixesEnabled"
                 clearable
               ></v-select>
@@ -1270,7 +1513,7 @@ onMounted(() => {
       <v-card
         v-if="
           selectedSemester &&
-          (coursePrefix1 || coursePrefix2 || selectedUser) &&
+          (coursePrefix1 || coursePrefix2 || selectedUser || selectedLocation) &&
           meetingTimes.length > 0
         "
       >
@@ -1431,7 +1674,7 @@ onMounted(() => {
       <v-card
         v-else-if="
           selectedSemester &&
-          (coursePrefix1 || coursePrefix2 || selectedUser) &&
+          (coursePrefix1 || coursePrefix2 || selectedUser || selectedLocation) &&
           meetingTimes.length === 0
         "
         class="mt-4"
@@ -1440,6 +1683,40 @@ onMounted(() => {
           <div class="text-center">
             No meeting times found for the selected criteria.
           </div>
+        </v-card-text>
+      </v-card>
+
+      <!-- Courses Without Meeting Times -->
+      <v-card
+        v-if="
+          selectedSemester &&
+          (coursePrefix1 || coursePrefix2 || selectedUser || selectedLocation) &&
+          coursesWithoutTimes.length > 0
+        "
+        class="mt-4"
+      >
+        <v-card-title>Courses Without Meeting Times</v-card-title>
+        <v-card-text>
+          <v-table density="compact">
+            <thead>
+              <tr>
+                <th class="text-left">Course</th>
+                <th class="text-left">Section</th>
+                <th class="text-left">Description</th>
+                <th class="text-left" v-if="!selectedUser">Instructor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="course in coursesWithoutTimes" :key="course.id">
+                <td>{{ course.courseNumber }}</td>
+                <td>{{ course.courseSection }}</td>
+                <td>{{ course.courseDescription }}</td>
+                <td v-if="!selectedUser">
+                  {{ course.user?.fName }} {{ course.user?.lName }}
+                </td>
+              </tr>
+            </tbody>
+          </v-table>
         </v-card-text>
       </v-card>
 
@@ -1563,13 +1840,22 @@ onMounted(() => {
           <v-card-text>
             <v-alert type="info" variant="tonal" class="mb-4">
               <div class="text-body-2">
-                <strong>CSV file must contain columns:</strong> course_id (sectionCode), short_name (courseNumber and courseSection will be parsed from this), long_name (courseDescription), term_id (semester name), account_id (accountId, optional). Course number is extracted from first 9 characters of short_name, and section number from position 11 onwards.
+                <strong>CSV file must contain columns:</strong> course_id
+                (sectionCode), short_name (courseNumber and courseSection will
+                be parsed from this), long_name (courseDescription), term_id
+                (semester name), account_id (accountId, optional). Course number
+                is extracted from first 9 characters of short_name, and section
+                number from position 11 onwards.
               </div>
               <div class="text-body-2 mt-2">
-                The term_id column should contain the semester name (e.g., "Fall 2026", "Spring 2023"). The system will look up the semester by name to determine which semester to assign the section to.
+                The term_id column should contain the semester name (e.g., "Fall
+                2026", "Spring 2023"). The system will look up the semester by
+                name to determine which semester to assign the section to.
               </div>
               <div class="text-body-2 mt-2">
-                If a section with the same semester, course number, and section number already exists, it will be skipped. New sections will be created for the semester specified in the term_id column.
+                If a section with the same semester, course number, and section
+                number already exists, it will be skipped. New sections will be
+                created for the semester specified in the term_id column.
               </div>
             </v-alert>
             <v-file-input
@@ -1581,20 +1867,40 @@ onMounted(() => {
             ></v-file-input>
             <v-alert v-if="importSectionsResults" type="success" class="mt-3">
               Import completed: {{ importSectionsResults.added }} records added
-              <div v-if="importSectionsResults.errors && importSectionsResults.errors.length > 0" class="mt-2">
+              <div
+                v-if="
+                  importSectionsResults.errors &&
+                  importSectionsResults.errors.length > 0
+                "
+                class="mt-2"
+              >
                 <strong>Errors:</strong>
                 <ul>
-                  <li v-for="(error, index) in importSectionsResults.errors" :key="index">{{ error }}</li>
+                  <li
+                    v-for="(error, index) in importSectionsResults.errors"
+                    :key="index"
+                  >
+                    {{ error }}
+                  </li>
                 </ul>
               </div>
             </v-alert>
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" text @click="closeImportSectionsDialog">
+            <v-btn
+              color="blue darken-1"
+              text
+              @click="closeImportSectionsDialog"
+            >
               Close
             </v-btn>
-            <v-btn color="blue darken-1" text :disabled="importingSections" @click="importSections">
+            <v-btn
+              color="blue darken-1"
+              text
+              :disabled="importingSections"
+              @click="importSections"
+            >
               {{ importingSections ? "Importing..." : "Import" }}
             </v-btn>
           </v-card-actions>
@@ -1610,13 +1916,17 @@ onMounted(() => {
           <v-card-text>
             <v-alert type="info" variant="tonal" class="mb-4">
               <div class="text-body-2">
-                <strong>CSV file must contain columns:</strong> course_id (sectionCode), user_id (userId), role.
+                <strong>CSV file must contain columns:</strong> course_id
+                (sectionCode), user_id (userId), role.
               </div>
               <div class="text-body-2 mt-2">
-                The system will look up the section by sectionCode and assign it to the user. Only records with role="teacher" will be imported. Records with other roles will be skipped.
+                The system will look up the section by sectionCode and assign it
+                to the user. Only records with role="teacher" will be imported.
+                Records with other roles will be skipped.
               </div>
               <div class="text-body-2 mt-2">
-                If a section is not found or the user-section assignment already exists, the record will be skipped.
+                If a section is not found or the user-section assignment already
+                exists, the record will be skipped.
               </div>
             </v-alert>
             <v-file-input
@@ -1626,25 +1936,51 @@ onMounted(() => {
               required
               prepend-icon="mdi-file-document"
             ></v-file-input>
-            <v-alert v-if="importUserSectionsResults" type="success" class="mt-3">
-              Import completed: {{ importUserSectionsResults.added }} records added
+            <v-alert
+              v-if="importUserSectionsResults"
+              type="success"
+              class="mt-3"
+            >
+              Import completed: {{ importUserSectionsResults.added }} records
+              added
               <div v-if="importUserSectionsResults.skipped > 0">
-                {{ importUserSectionsResults.skipped }} records skipped (role is not "teacher")
+                {{ importUserSectionsResults.skipped }} records skipped (role is
+                not "teacher")
               </div>
-              <div v-if="importUserSectionsResults.errors && importUserSectionsResults.errors.length > 0" class="mt-2">
+              <div
+                v-if="
+                  importUserSectionsResults.errors &&
+                  importUserSectionsResults.errors.length > 0
+                "
+                class="mt-2"
+              >
                 <strong>Errors:</strong>
                 <ul>
-                  <li v-for="(error, index) in importUserSectionsResults.errors" :key="index">{{ error }}</li>
+                  <li
+                    v-for="(error, index) in importUserSectionsResults.errors"
+                    :key="index"
+                  >
+                    {{ error }}
+                  </li>
                 </ul>
               </div>
             </v-alert>
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" text @click="closeImportUserSectionsDialog">
+            <v-btn
+              color="blue darken-1"
+              text
+              @click="closeImportUserSectionsDialog"
+            >
               Close
             </v-btn>
-            <v-btn color="blue darken-1" text :disabled="importingUserSections" @click="importUserSections">
+            <v-btn
+              color="blue darken-1"
+              text
+              :disabled="importingUserSections"
+              @click="importUserSections"
+            >
               {{ importingUserSections ? "Importing..." : "Import" }}
             </v-btn>
           </v-card-actions>
@@ -1660,10 +1996,14 @@ onMounted(() => {
           <v-card-text>
             <v-alert type="info" variant="tonal" class="mb-4">
               <div class="text-body-2">
-                <strong>CSV file must contain columns:</strong> section_code (sectionCode), monday, tuesday, wednesday, thursday, friday, saturday, sunday (all as integer 1 or 0), start_time, end_time.
+                <strong>CSV file must contain columns:</strong> section_code
+                (sectionCode), monday, tuesday, wednesday, thursday, friday,
+                saturday, sunday (all as integer 1 or 0), start_time, end_time.
               </div>
               <div class="text-body-2 mt-2">
-                The system will look up the section by sectionCode and create meeting times. If a section is not found or a duplicate meeting time exists, the record will be skipped.
+                The system will look up the section by sectionCode and create
+                meeting times. If a section is not found or a duplicate meeting
+                time exists, the record will be skipped.
               </div>
             </v-alert>
             <v-file-input
@@ -1673,23 +2013,125 @@ onMounted(() => {
               required
               prepend-icon="mdi-file-document"
             ></v-file-input>
-            <v-alert v-if="importMeetingTimesResults" type="success" class="mt-3">
-              Import completed: {{ importMeetingTimesResults.added }} records added
-              <div v-if="importMeetingTimesResults.errors && importMeetingTimesResults.errors.length > 0" class="mt-2">
+            <v-alert
+              v-if="importMeetingTimesResults"
+              type="success"
+              class="mt-3"
+            >
+              Import completed: {{ importMeetingTimesResults.added }} records
+              added
+              <div
+                v-if="
+                  importMeetingTimesResults.errors &&
+                  importMeetingTimesResults.errors.length > 0
+                "
+                class="mt-2"
+              >
                 <strong>Errors:</strong>
                 <ul>
-                  <li v-for="(error, index) in importMeetingTimesResults.errors" :key="index">{{ error }}</li>
+                  <li
+                    v-for="(error, index) in importMeetingTimesResults.errors"
+                    :key="index"
+                  >
+                    {{ error }}
+                  </li>
                 </ul>
               </div>
             </v-alert>
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" text @click="closeImportMeetingTimesDialog">
+            <v-btn
+              color="blue darken-1"
+              text
+              @click="closeImportMeetingTimesDialog"
+            >
               Close
             </v-btn>
-            <v-btn color="blue darken-1" text :disabled="importingMeetingTimes" @click="importMeetingTimes">
+            <v-btn
+              color="blue darken-1"
+              text
+              :disabled="importingMeetingTimes"
+              @click="importMeetingTimes"
+            >
               {{ importingMeetingTimes ? "Importing..." : "Import" }}
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <!-- Import Section Locations Dialog -->
+      <v-dialog v-model="importSectionLocationsDialog" max-width="600px">
+        <v-card>
+          <v-card-title>
+            <span class="text-h5">Import Section Locations</span>
+          </v-card-title>
+          <v-card-text>
+            <v-alert type="info" variant="tonal" class="mb-4">
+              <div class="text-body-2">
+                <strong>CSV file must contain columns:</strong> section_code,
+                room_number.
+              </div>
+              <div class="text-body-2 mt-2">
+                The system will look up the section by section_code and create a
+                location entry using room_number as the location name. If a
+                section is not found or the location already exists, the record
+                will be skipped.
+              </div>
+            </v-alert>
+            <v-file-input
+              v-model="importSectionLocationsFile"
+              label="CSV File *"
+              accept=".csv"
+              required
+              prepend-icon="mdi-file-document"
+            ></v-file-input>
+            <v-alert
+              v-if="importSectionLocationsResults"
+              type="success"
+              class="mt-3"
+            >
+              Import completed: {{ importSectionLocationsResults.added }} records
+              added
+              <div v-if="importSectionLocationsResults.skipped > 0">
+                {{ importSectionLocationsResults.skipped }} records skipped
+                (duplicates)
+              </div>
+              <div
+                v-if="
+                  importSectionLocationsResults.errors &&
+                  importSectionLocationsResults.errors.length > 0
+                "
+                class="mt-2"
+              >
+                <strong>Errors:</strong>
+                <ul>
+                  <li
+                    v-for="(error, index) in importSectionLocationsResults.errors"
+                    :key="index"
+                  >
+                    {{ error }}
+                  </li>
+                </ul>
+              </div>
+            </v-alert>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn
+              color="blue darken-1"
+              text
+              @click="closeImportSectionLocationsDialog"
+            >
+              Close
+            </v-btn>
+            <v-btn
+              color="blue darken-1"
+              text
+              :disabled="importingSectionLocations"
+              @click="importSectionLocations"
+            >
+              {{ importingSectionLocations ? "Importing..." : "Import" }}
             </v-btn>
           </v-card-actions>
         </v-card>
