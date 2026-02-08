@@ -63,7 +63,7 @@ const semesterInstructionText = computed(() => {
   if (startDate > today) {
     return 'For each course, assign a course to be copied into Canvas from a past semester in Blackboard or indicate that you don\'t want to import a course.';
   }
-  return 'For courses in this semester you may assign a Blackboard course in the same semester to be copied into Canvas for future use in setting up courses.';
+  return 'For courses in this semester you may assign a Blackboard course in the same semester to be copied into Canvas for future use in setting up courses.\n\nNote: when you click assign there is no dialog displayed – the course is assigned to itself.';
 });
 
 // Computed property to check if selected semester is in the past
@@ -268,6 +268,13 @@ const assignmentStatus = computed(() => {
   return allAssigned ? "allAssigned" : "moreToAssign";
 });
 
+// Helper to format a date string for display (e.g., "1/15/2024")
+const formatDateDisplay = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
+};
+
 // Helper function to check if a semester started in the past
 const isSemesterInPast = (semester) => {
   if (!semester || !semester.startDate) return false;
@@ -375,7 +382,9 @@ const loadCoursesForSemester = async (course, semesterId) => {
         c.courseDescription || "No description"
       }`,
     }));
-    course.selectedCourseForAssignment = null;
+    course.selectedCourseForAssignment = course.availableCourses.length === 1
+      ? course.availableCourses[0].id
+      : null;
 
     if (course.availableCourses.length === 0 && response.data.length > 0) {
       console.warn(
@@ -510,7 +519,7 @@ onMounted(() => {
           </v-row>
           <v-row v-if="semesterInstructionText">
             <v-col cols="12">
-              <div class="text-body-1 font-weight-bold">
+              <div class="text-body-1 font-weight-bold" style="white-space: pre-line">
                 {{ semesterInstructionText }}
               </div>
             </v-col>
@@ -549,6 +558,9 @@ onMounted(() => {
         <v-card-text v-if="message !== 'Select a semester to view your courses'" style="background-color: #f5f5f5; text-align: center;">
           <b>{{ message }}</b>
         </v-card-text>
+        <div v-if="courses.length > 0" class="pa-3 text-body-2 text-medium-emphasis">
+          Note: For merged courses only the course that is the primary course is listed.
+        </div>
         <v-table>
           <thead>
             <tr>
@@ -597,7 +609,7 @@ onMounted(() => {
                       </div>
                       <div v-if="course.semester?.startDate">
                         <strong>Start Date:</strong>
-                        {{ course.semester.startDate }}
+                        {{ formatDateDisplay(course.semester.startDate) }}
                       </div>
                       <div v-if="course.assignedCourse">
                         <strong>Assigned To:</strong>
@@ -730,7 +742,7 @@ onMounted(() => {
               :items="course.availableSemesters || []"
               item-title="name"
               item-value="id"
-              label="Select Semester"
+              label="Select semester to copy from"
               @update:model-value="loadCoursesForSemester(course, $event)"
             ></v-select>
 
