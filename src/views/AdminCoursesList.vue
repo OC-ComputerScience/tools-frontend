@@ -4,9 +4,13 @@ import SemesterServices from "../services/semesterServices";
 import AssignedCourseServices from "../services/assignedCourseServices";
 import UserServices from "../services/userServices";
 import UserSectionServices from "../services/userSectionServices";
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
+
+const ITEMS_PER_PAGE = 25;
 
 const courses = ref([]);
+const currentPage = ref(1);
+const itemsPerPage = ref(ITEMS_PER_PAGE);
 const semesters = ref([]);
 const users = ref([]);
 const selectedSemester = ref(null);
@@ -17,10 +21,19 @@ const totalAssignments = ref(0);
 const facultyWithNoAssignments = ref(0);
 const facultyWithAssignments = ref(0);
 
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(courses.value.length / itemsPerPage.value))
+);
+
+const paginatedCourses = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value;
+  return courses.value.slice(start, start + itemsPerPage.value);
+});
+
 const retrieveSemesters = () => {
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = response.data;
+      semesters.value = response.data.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
       if (response.data.length > 0) {
         selectedSemester.value = response.data[0].id;
         retrieveCourses();
@@ -79,16 +92,19 @@ const exportAssignedCourses = async () => {
     const allAssignedCoursesResponse = await AssignedCourseServices.getAllAssignedCourses({});
     const allAssignedCourses = allAssignedCoursesResponse.data || [];
     
-    // Filter to only assigned courses for sections in the selected semester
-    const semesterAssignedCourses = allAssignedCourses.filter(ac => sectionIds.includes(ac.sectionId));
+    // Filter to only assigned courses for sections in the selected semester that have an assignedSectionId
+    // (exclude "Not Assignment Needed" records - nothing to export for those)
+    const semesterAssignedCourses = allAssignedCourses.filter(
+      ac => sectionIds.includes(ac.sectionId) && ac.assignedSectionId != null
+    );
 
     if (semesterAssignedCourses.length === 0) {
-      alert("No assigned courses found for the selected semester");
+      alert("No assigned courses with a source course to export for the selected semester");
       return;
     }
 
     // Get unique assigned section IDs to fetch their details with term info
-    const assignedSectionIds = [...new Set(semesterAssignedCourses.map(ac => ac.assignedSectionId))];
+    const assignedSectionIds = [...new Set(semesterAssignedCourses.map(ac => ac.assignedSectionId).filter(Boolean))];
     
     // Fetch all assigned sections with their term info
     const assignedSectionsResponses = await Promise.all(
@@ -393,6 +409,7 @@ const exportCanvasCourses = async () => {
 const retrieveCourses = async () => {
   if (!selectedSemester.value) {
     courses.value = [];
+    currentPage.value = 1;
     totalSections.value = 0;
     totalAssignments.value = 0;
     facultyWithNoAssignments.value = 0;
@@ -416,6 +433,11 @@ const retrieveCourses = async () => {
       allSections = allSections.filter(s => userSectionIds.has(s.id));
     }
 
+    // Filter to only courses that have an assignment record
+    const hasAssignment = (c) =>
+      Array.isArray(c.assignedCourse) ? c.assignedCourse.length > 0 : !!c.assignedCourse;
+    allSections = allSections.filter(hasAssignment);
+
     courses.value = allSections.sort((a, b) => {
       // Sort by courseNumber first, then by courseSection in ascending order
       const courseNumberCompare = a.courseNumber.localeCompare(
@@ -435,6 +457,7 @@ const retrieveCourses = async () => {
         sensitivity: "base",
       });
     });
+    currentPage.value = 1;
     calculateStats();
   } catch (e) {
     message.value = e.response?.data?.message || "Error loading courses";
@@ -635,15 +658,25 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="course in courses" :key="course.id">
+            <tr v-for="course in paginatedCourses" :key="course.id">
               <td>{{ course.courseNumber }}</td>
               <td>{{ course.courseSection }}</td>
               <td>{{ course.courseDescription }}</td>
-              <td>{{ course.assignedCourse ? "Assigned" : "Not Assigned" }}</td>
-              <td>{{ course.assignedCourse ? 1 : 0 }}</td>
+              <td>{{ (Array.isArray(course.assignedCourse) ? course.assignedCourse.length > 0 : !!course.assignedCourse) ? "Assigned" : "Not Assigned" }}</td>
+              <td>{{ Array.isArray(course.assignedCourse) ? course.assignedCourse.length : (course.assignedCourse ? 1 : 0) }}</td>
             </tr>
           </tbody>
         </v-table>
+        <v-pagination
+          v-if="courses.length > itemsPerPage"
+          v-model="currentPage"
+          :length="totalPages"
+          :total-visible="7"
+          class="pa-4"
+        ></v-pagination>
+        <div v-if="courses.length > 0" class="pa-3 text-caption text-medium-emphasis">
+          Showing {{ (currentPage - 1) * itemsPerPage + 1 }}-{{ Math.min(currentPage * itemsPerPage, courses.length) }} of {{ courses.length }} courses
+        </div>
       </v-card>
     </v-container>
   </div>
