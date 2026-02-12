@@ -654,7 +654,7 @@ onMounted(() => {
               <th class="text-left">Section</th>
               <th class="text-left">Description</th>
               <th class="text-left">Status</th>
-              <th class="text-left">Assignment Count</th>
+              <th class="text-left">Faculty Last Name</th>
             </tr>
           </thead>
           <tbody>
@@ -663,7 +663,7 @@ onMounted(() => {
               <td>{{ course.courseSection }}</td>
               <td>{{ course.courseDescription }}</td>
               <td>{{ (Array.isArray(course.assignedCourse) ? course.assignedCourse.length > 0 : !!course.assignedCourse) ? "Assigned" : "Not Assigned" }}</td>
-              <td>{{ Array.isArray(course.assignedCourse) ? course.assignedCourse.length : (course.assignedCourse ? 1 : 0) }}</td>
+              <td>{{ selectedFaculty ? (users.find(u => u.id === selectedFaculty)?.lName ?? '') : (course.facultyLastNames || course.user?.lName || '') }}</td>
             </tr>
           </tbody>
         </v-table>
