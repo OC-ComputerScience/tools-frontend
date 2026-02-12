@@ -106,16 +106,13 @@ const retrieveSemesters = () => {
 const retrieveUsers = () => {
   UserServices.getAllUsers()
     .then((response) => {
-      // Add fullName property for display and sort by last name
+      // Add fullName property for display (Last, First) and sort by last name
       users.value = response.data
         .map((user) => ({
           ...user,
-          fullName: `${user.fName} ${user.lName}`,
+          fullName: `${user.lName}, ${user.fName}`,
         }))
-        .sort((a, b) => {
-          // Sort by last name (lName) alphabetically
-          return a.lName.localeCompare(b.lName);
-        });
+        .sort((a, b) => a.lName.localeCompare(b.lName));
     })
     .catch((e) => {
       console.error("Error loading users:", e);
