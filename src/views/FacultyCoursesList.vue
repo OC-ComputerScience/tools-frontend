@@ -272,6 +272,14 @@ const formatDateDisplay = (dateStr) => {
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString();
 };
 
+// Helper to check if assignment modification is locked (exported or coursesExported)
+const isAssignmentLocked = (course) => {
+  const ac = course?.assignedCourse;
+  if (!ac) return false;
+  const obj = Array.isArray(ac) ? ac[0] : ac;
+  return !!(obj?.exported || obj?.coursesExported);
+};
+
 // Helper function to check if a semester started in the past
 const isSemesterInPast = (semester) => {
   if (!semester || !semester.startDate) return false;
@@ -292,6 +300,10 @@ const getCourseSemester = (course) => {
 };
 
 const openAssignmentDialog = async (course) => {
+  if (isAssignmentLocked(course)) {
+    message.value = "Cannot change assignment - this course has been exported";
+    return;
+  }
   // Check if course's semester started in the past
   const courseSemester = getCourseSemester(course);
 
@@ -399,6 +411,10 @@ const loadCoursesForSemester = async (course, semesterId) => {
 };
 
 const markNoAssign = async (course) => {
+  if (isAssignmentLocked(course)) {
+    message.value = "Cannot change assignment - this course has been exported";
+    return;
+  }
   const assignedCourse = {
     sectionId: course.id,
     notAssignmentNeeded: true,
@@ -419,6 +435,10 @@ const markNoAssign = async (course) => {
 };
 
 const assignCourse = async (course) => {
+  if (isAssignmentLocked(course)) {
+    message.value = "Cannot change assignment - this course has been exported";
+    return;
+  }
   if (!course.selectedCourseForAssignment) {
     message.value = "Please select a course to assign";
     return;
@@ -456,6 +476,10 @@ const assignCourse = async (course) => {
 };
 
 const removeAssignment = async (course) => {
+  if (isAssignmentLocked(course)) {
+    message.value = "Cannot remove assignment - this course has been exported";
+    return;
+  }
   if (!course.assignedCourse && !course.assignedCourseInfo) return;
 
   try {
@@ -557,6 +581,7 @@ onMounted(() => {
         </v-card-text>
         <div v-if="courses.length > 0" class="pa-3 text-body-2 text-medium-emphasis">
           Note: For merged courses only the course that is the primary course is listed.
+          <br />Export means the assignment has been exported from this tool to be processed so it can be changed.
         </div>
         <v-table>
           <thead>
@@ -566,6 +591,7 @@ onMounted(() => {
               <th class="text-left">Description</th>
               <th class="text-left">Assigned Import</th>
               <th class="text-left">Actions</th>
+              <th class="text-left">Exported</th>
             </tr>
           </thead>
           <tbody>
@@ -664,8 +690,9 @@ onMounted(() => {
                   small
                   color="primary"
                   :disabled="
-                    course.assignedCourse &&
-                    isSemesterInPast(getCourseSemester(course))
+                    isAssignmentLocked(course) ||
+                    (course.assignedCourse &&
+                    isSemesterInPast(getCourseSemester(course)))
                   "
                   @click="openAssignmentDialog(course)"
                 >
@@ -677,8 +704,9 @@ onMounted(() => {
                   color="grey"
                   class="ml-2"
                   :disabled="
-                    course.assignedCourse &&
-                    isSemesterInPast(getCourseSemester(course))
+                    isAssignmentLocked(course) ||
+                    (course.assignedCourse &&
+                    isSemesterInPast(getCourseSemester(course)))
                   "
                   @click="markNoAssign(course)"
                 >
@@ -689,11 +717,13 @@ onMounted(() => {
                   small
                   color="error"
                   class="ml-2"
+                  :disabled="isAssignmentLocked(course)"
                   @click="removeAssignment(course)"
                 >
                   Remove
                 </v-btn>
               </td>
+              <td>{{ isAssignmentLocked(course) ? 'Exported' : '' }}</td>
             </tr>
           </tbody>
         </v-table>

@@ -11,6 +11,11 @@ const UserSectionServices = {
     return apiClient.get("userSections");
   },
 
+  // Get unique faculty counts (avoids per-semester double-counting)
+  getFacultyStats: () => {
+    return apiClient.get("userSections/faculty-stats");
+  },
+
   // Get all sections for a specific user
   getSectionsByUser: (userId) => {
     return apiClient.get(`userSections/user/${userId}`);
