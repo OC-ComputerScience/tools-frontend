@@ -96,7 +96,7 @@ const exportAssignedCourses = async () => {
       const sectionSemester = section.semester || { name: '' };
       const assignedSectionSemester = assignedSection.semester || { name: '' };
 
-      const courseId = `${sectionSemester.name}_${section.courseNumber}_${section.courseSection}`;
+      const courseId = `${sectionSemester.name}_${section.courseNumber}-${section.courseSection}`;
       const exportFilename = `ArchiveFile_${assignedSectionSemester.name}_${assignedSection.courseNumber}-${assignedSection.courseSection}.zip`;
       const semesterId = sectionSemester.name;
       const shortName = `${section.courseNumber}-${section.courseSection}`;
@@ -197,7 +197,7 @@ const exportCanvasCourses = async () => {
       if (!section) return;
 
       const sectionSemester = section.semester || { name: '', startDate: null, endDate: null };
-      const courseId = `${sectionSemester.name}_${section.courseNumber}_${section.courseSection}`;
+      const courseId = `${sectionSemester.name}_${section.courseNumber}-${section.courseSection}`;
 
       coursesCsvRows.push([
         escapeCsvValue(courseId),
