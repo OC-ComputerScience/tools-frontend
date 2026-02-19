@@ -89,7 +89,7 @@ const exportAssignedCourses = async () => {
       return stringValue;
     };
 
-    const csvRows = [['course_id', 'export_filename', 'term_id', 'short_name', 'long_name', 'accountId'].join(',')];
+    const csvRows = [['course_id', 'assigned_course_id', 'export_filename', 'term_id', 'short_name', 'long_name', 'accountId', 'assigned_course', 'assigned_semester'].join(',')];
     const exportedAssignedCourseIds = [];
 
     toExport.forEach(({ section, assignedCourse, assignedSection }) => {
@@ -97,18 +97,25 @@ const exportAssignedCourses = async () => {
       const assignedSectionSemester = assignedSection.semester || { name: '' };
 
       const courseId = `${sectionSemester.name}_${section.courseNumber}-${section.courseSection}`;
+      const assignedCourseId = `${assignedSectionSemester.name}_${assignedSection.courseNumber}-${assignedSection.courseSection}`;
+      // Export filename uses assigned course semester (not section semester)
       const exportFilename = `ArchiveFile_${assignedSectionSemester.name}_${assignedSection.courseNumber}-${assignedSection.courseSection}.zip`;
       const semesterId = sectionSemester.name;
       const shortName = `${section.courseNumber}-${section.courseSection}`;
       const longName = section.courseDescription || '';
+      const assignedCourseNumberSection = `${assignedSection.courseNumber}-${assignedSection.courseSection}`;
+      const assignedSemester = assignedSectionSemester.name || '';
 
       csvRows.push([
         escapeCsvValue(courseId),
+        escapeCsvValue(assignedCourseId),
         escapeCsvValue(exportFilename),
         escapeCsvValue(semesterId),
         escapeCsvValue(shortName),
         escapeCsvValue(longName),
-        escapeCsvValue(section.accountId || '')
+        escapeCsvValue(section.accountId || ''),
+        escapeCsvValue(assignedCourseNumberSection),
+        escapeCsvValue(assignedSemester)
       ].join(','));
       exportedAssignedCourseIds.push(assignedCourse.id);
     });
