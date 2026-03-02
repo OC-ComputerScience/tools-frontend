@@ -5,7 +5,7 @@ import UserServices from "../services/userServices.js";
 import { useRouter } from "vue-router";
 
 // Change to 1 to show full instructions with button; 2 = closed message with no button
-const FACULTY_HOME_VERSION = 2;
+const FACULTY_HOME_VERSION = 1;
 
 const router = useRouter();
 const user = ref(null);
