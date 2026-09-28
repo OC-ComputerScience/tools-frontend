@@ -10,17 +10,20 @@ const editedItem = ref({
   name: "",
   startDate: "",
   endDate: "",
+  canvasTermId: null,
 });
 const defaultItem = {
   name: "",
   startDate: "",
   endDate: "",
+  canvasTermId: null,
 };
 
 const headers = [
   { title: "Name", key: "name" },
   { title: "Start Date", key: "startDate" },
   { title: "End Date", key: "endDate" },
+  { title: "Canvas Term ID", key: "canvasTermId" },
   { title: "Actions", key: "actions", sortable: false },
 ];
 
@@ -85,6 +88,11 @@ const close = () => {
 };
 
 const save = () => {
+  editedItem.value.canvasTermId =
+    editedItem.value.canvasTermId === "" || editedItem.value.canvasTermId == null
+      ? null
+      : Number(editedItem.value.canvasTermId);
+
   if (editedIndex.value > -1) {
     // Update
     SemesterServices.update(editedItem.value.id, editedItem.value)
@@ -148,6 +156,9 @@ onMounted(() => {
             <template v-slot:item.endDate="{ item }">
               {{ formatDate(item.endDate) }}
             </template>
+            <template v-slot:item.canvasTermId="{ item }">
+              {{ item.canvasTermId ?? "" }}
+            </template>
             <template v-slot:item.actions="{ item }">
               <v-icon small class="mr-2" @click="editItem(item)">
                 mdi-pencil
@@ -188,6 +199,14 @@ onMounted(() => {
                   label="End Date"
                   type="date"
                   required
+                ></v-text-field>
+              </v-col>
+              <v-col cols="12">
+                <v-text-field
+                  v-model="editedItem.canvasTermId"
+                  label="Canvas Term ID"
+                  type="number"
+                  clearable
                 ></v-text-field>
               </v-col>
             </v-row>
