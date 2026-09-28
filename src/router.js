@@ -14,10 +14,21 @@ import ScheduleView from "./views/ScheduleView.vue";
 import SemesterPlanView from "./views/SemesterPlanView.vue";
 import University from './views/University.vue';
 import UniversityCourse from './views/UniversityCourse.vue';
+import UniversityOutcome from './views/UniversityOutcome.vue';
+import Department from './views/Department.vue';
+import College from './views/College.vue';
+import DepartmentOutcome from './views/DepartmentOutcome.vue';
+import DepartmentAssessment from './views/DepartmentAssessment.vue';
+import CollegeOutcome from './views/CollegeOutcome.vue';
+import UniversityAssessment from './views/UniversityAssessment.vue';
+import Assignment from './views/Assignment.vue';
+import AssessmentScore from './views/AssessmentScore.vue';
+import ImportCanvasGrades from './views/ImportCanvasGrades.vue';
 import UniversityTranscript from './views/UniversityTranscript.vue';
 import TranscriptCourse from './views/TranscriptCourse.vue';
 import Semester from './views/Semester.vue';
 import Catalog from './views/Catalog.vue';
+import Course from './views/Course.vue';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -99,6 +110,56 @@ const router = createRouter({
       component: UniversityCourse
     },
     {
+      path: '/university-outcomes',
+      name: 'University Outcomes',
+      component: UniversityOutcome
+    },
+    {
+      path: '/departments',
+      name: 'Departments',
+      component: Department
+    },
+    {
+      path: '/colleges',
+      name: 'Colleges',
+      component: College
+    },
+    {
+      path: '/department-outcomes',
+      name: 'Department Outcomes',
+      component: DepartmentOutcome
+    },
+    {
+      path: '/department-assessment',
+      name: 'Department Assessment',
+      component: DepartmentAssessment
+    },
+    {
+      path: '/college-assessment',
+      name: 'College Assessment',
+      component: CollegeOutcome
+    },
+    {
+      path: '/university-assessment',
+      name: 'University Assessment',
+      component: UniversityAssessment
+    },
+    {
+      path: '/assignments',
+      name: 'Assignments',
+      component: Assignment
+    },
+    {
+      path: '/assessment-scores',
+      name: 'Assessment Scores',
+      component: AssessmentScore
+    },
+    {
+      path: '/import-canvas-grades',
+      name: 'Import Canvas Grades',
+      component: ImportCanvasGrades
+    },
+    {
       path: '/transcripts',
       name: 'Transcripts',
       component: UniversityTranscript
@@ -118,6 +179,11 @@ const router = createRouter({
       path: '/catalogs',
       name: 'Catalogs',
       component: Catalog
+    },
+    {
+      path: '/courses',
+      name: 'Courses',
+      component: Course
     }
   ],
 });
