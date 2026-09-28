@@ -1,12 +1,14 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import UniversityServices from "../services/universityServices";
+import UserServices from "../services/userServices";
 
 const dialog = ref(false);
 const deleteDialog = ref(false);
 const itemToDelete = ref(null);
 const loading = ref(false);
 const universities = ref([]);
+const users = ref([]);
 const universityNameFilter = ref("");
 const filteredUniversities = computed(() => {
   if (!universityNameFilter.value) return universities.value;
@@ -23,6 +25,7 @@ const editedItem = ref({
   state: "",
   country: "",
   oc_university_id: null,
+  provostUserId: null,
 });
 const defaultItem = {
   name: "",
@@ -30,6 +33,7 @@ const defaultItem = {
   state: "",
   country: "",
   oc_university_id: null,
+  provostUserId: null,
 };
 
 const formErrors = ref({
@@ -47,8 +51,14 @@ const headers = [
   { title: "State", value: "state", sortable: true },
   { title: "Country", value: "country", sortable: true },
   { title: "OC University ID", value: "oc_university_id", sortable: true },
+  { title: "Provost", value: "provost", sortable: true },
   { title: "Actions", value: "actions", sortable: false },
 ];
+
+const provostName = (provost) => {
+  if (!provost) return "";
+  return `${provost.lName}, ${provost.fName}`;
+};
 
 const formTitle = computed(() => {
   return editedIndex.value === -1 ? "New University" : "Edit University";
@@ -63,6 +73,18 @@ const initialize = () => {
     })
     .catch((error) => {
       console.error("Error fetching universities:", error);
+    })
+  UserServices.getAllUsers()
+    .then((response) => {
+      users.value = response.data
+        .map((user) => ({
+          ...user,
+          fullName: `${user.lName}, ${user.fName}`,
+        }))
+        .sort((a, b) => a.lName.localeCompare(b.lName));
+    })
+    .catch((error) => {
+      console.error("Error fetching users:", error);
     })
     .finally(() => {
       loading.value = false;
@@ -99,10 +121,20 @@ const close = () => {
   editedIndex.value = -1;
 };
 
+const universityPayload = () => ({
+  name: editedItem.value.name,
+  city: editedItem.value.city,
+  state: editedItem.value.state,
+  country: editedItem.value.country,
+  oc_university_id: editedItem.value.oc_university_id,
+  provostUserId: editedItem.value.provostUserId || null,
+});
+
 const save = () => {
+  const payload = universityPayload();
   if (editedIndex.value > -1) {
     // Update
-    UniversityServices.update(editedItem.value.id, editedItem.value)
+    UniversityServices.update(editedItem.value.id, payload)
       .then((response) => {
         Object.assign(universities.value[editedIndex.value], response.data);
         close();
@@ -112,7 +144,7 @@ const save = () => {
       });
   } else {
     // Create
-    UniversityServices.create(editedItem.value)
+    UniversityServices.create(payload)
       .then((response) => {
         universities.value.push(response.data);
         close();
@@ -172,6 +204,9 @@ onMounted(() => {
           <template v-slot:[`item.oc_university_id`]="{ item }">
             {{ item.oc_university_id || "N/A" }}
           </template>
+          <template v-slot:[`item.provost`]="{ item }">
+            {{ provostName(item.provost) }}
+          </template>
           </v-data-table>
         </v-card-text>
       </v-card>
@@ -228,6 +263,16 @@ onMounted(() => {
                   "
                   @input="formErrors.oc_university_id = false"
                 ></v-text-field>
+              </v-col>
+              <v-col cols="12">
+                <v-autocomplete
+                  v-model="editedItem.provostUserId"
+                  :items="users"
+                  item-title="fullName"
+                  item-value="id"
+                  label="Provost"
+                  clearable
+                ></v-autocomplete>
               </v-col>
             </v-row>
           </v-container>

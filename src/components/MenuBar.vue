@@ -90,6 +90,13 @@ const accessibleMenuOptions = computed(() => {
   });
 });
 
+const menuLink = (menuOption) => {
+  if (menuOption.routeName && router.hasRoute(menuOption.routeName)) {
+    return { to: { name: menuOption.routeName } };
+  }
+  return {};
+};
+
 // Check if user is Admin
 const isAdminUser = computed(() => {
   if (!user.value) return false;
@@ -155,7 +162,7 @@ onMounted(() => {
           v-for="menuOption in accessibleMenuOptions"
           :key="menuOption.id"
           class="mx-2"
-          :to="{ name: menuOption.routeName }"
+          v-bind="menuLink(menuOption)"
         >
           {{ menuOption.option }}
         </v-btn>
