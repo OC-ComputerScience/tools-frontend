@@ -97,6 +97,7 @@ const headers = [
 
 const collegeHeaders = [
   { title: "College", key: "name", sortable: true },
+  { title: "Assessment Weight", key: "assessmentWeight", sortable: true },
   { title: "Assessment Score", key: "averageScore", sortable: true },
   { title: "Student Scores", key: "gradeCount", sortable: true },
 ];
@@ -284,6 +285,9 @@ onMounted(async () => {
               item-value="id"
               :items-per-page="-1"
             >
+              <template v-slot:[`item.assessmentWeight`]="{ item }">
+                {{ item.assessmentWeight == null ? "" : `${item.assessmentWeight}%` }}
+              </template>
               <template v-slot:[`item.averageScore`]="{ item }">
                 {{ item.averageScore == null ? "" : item.averageScore }}
               </template>
