@@ -19,6 +19,7 @@ import Department from './views/Department.vue';
 import College from './views/College.vue';
 import DepartmentOutcome from './views/DepartmentOutcome.vue';
 import DepartmentAssessment from './views/DepartmentAssessment.vue';
+import CoreAssessment from './views/CoreAssessment.vue';
 import CollegeOutcome from './views/CollegeOutcome.vue';
 import UniversityAssessment from './views/UniversityAssessment.vue';
 import Assignment from './views/Assignment.vue';
@@ -133,6 +134,11 @@ const router = createRouter({
       path: '/department-assessment',
       name: 'Department Assessment',
       component: DepartmentAssessment
+    },
+    {
+      path: '/core-assessment',
+      name: 'Core Assessment',
+      component: CoreAssessment
     },
     {
       path: '/college-assessment',
