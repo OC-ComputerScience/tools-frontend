@@ -3,12 +3,16 @@ import { ref, computed, watch, onMounted } from "vue";
 import DepartmentServices from "../services/departmentServices";
 import SemesterServices from "../services/semesterServices";
 import DepartmentAssessmentServices from "../services/departmentAssessmentServices";
+import DepartmentOutcomeServices from "../services/departmentOutcomeServices";
+import AssignmentServices from "../services/assignmentServices";
 import UserServices from "../services/userServices";
 import Utils from "../config/utils";
+import { buildDepartmentAssessmentPdf } from "../utils/departmentAssessmentReport";
 
 const loadingDepartments = ref(false);
 const loadingSemesters = ref(false);
 const loading = ref(false);
+const exporting = ref(false);
 const departments = ref([]);
 const semesters = ref([]);
 const outcomes = ref([]);
@@ -100,6 +104,47 @@ const assignmentHeaders = computed(() => {
 const selectedSemesterName = computed(() =>
   semesters.value.find((semester) => semester.id === semesterId.value)?.name || ""
 );
+
+const selectedDepartment = computed(() =>
+  departments.value.find((department) => department.id === departmentId.value) || null
+);
+
+const chairName = (chair) => {
+  if (!chair) return "";
+  return `${chair.lName}, ${chair.fName}`;
+};
+
+const downloadReport = async () => {
+  if (!canLoad.value || !selectedDepartment.value) return;
+  exporting.value = true;
+  errorMessage.value = "";
+  try {
+    const [outcomeResponse, assignmentResponse] = await Promise.all([
+      DepartmentOutcomeServices.getByDepartmentId(departmentId.value),
+      AssignmentServices.getByDepartmentId(departmentId.value),
+    ]);
+    const department = selectedDepartment.value;
+    const semester = semesters.value.find((item) => item.id === semesterId.value);
+    const doc = buildDepartmentAssessmentPdf({
+      universityName: department.university?.name || "",
+      collegeName: department.college?.name || "",
+      departmentName: department.name || "",
+      chairName: chairName(department.chair),
+      semesterName: semester?.name || selectedSemesterName.value,
+      semesterStartDate: semester?.startDate || "",
+      outcomes: outcomeResponse.data || [],
+      assessmentOutcomes: outcomes.value,
+      assignments: assignmentResponse.data || [],
+    });
+    const code = department.code || department.id;
+    const semesterLabel = semester?.name || selectedSemesterName.value || "semester";
+    doc.save(`department-assessment-${code}-${semesterLabel}.pdf`);
+  } catch (error) {
+    errorMessage.value = error.response?.data?.message || "Error creating the department assessment report";
+  } finally {
+    exporting.value = false;
+  }
+};
 
 const sectionLabel = (assignment) => {
   if (!assignment?.courseSection) return "";
@@ -250,6 +295,16 @@ onMounted(async () => {
           ></v-autocomplete>
         </v-col>
       </v-row>
+
+      <v-btn
+        color="primary"
+        class="mb-4"
+        :disabled="!canLoad || loading || exporting"
+        :loading="exporting"
+        @click="downloadReport"
+      >
+        Create PDF
+      </v-btn>
 
       <v-alert v-if="errorMessage" type="error" class="mb-4" variant="tonal">
         {{ errorMessage }}

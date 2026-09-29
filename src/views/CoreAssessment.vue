@@ -5,12 +5,15 @@ import CollegeServices from "../services/collegeServices";
 import DepartmentServices from "../services/departmentServices";
 import SemesterServices from "../services/semesterServices";
 import CoreAssessmentServices from "../services/coreAssessmentServices";
+import UniversityOutcomeServices from "../services/universityOutcomeServices";
 import UserServices from "../services/userServices";
 import Utils from "../config/utils";
+import { buildCoreAssessmentPdf } from "../utils/coreAssessmentReport";
 
 const loadingUniversities = ref(false);
 const loadingSemesters = ref(false);
 const loading = ref(false);
+const exporting = ref(false);
 const universities = ref([]);
 const colleges = ref([]);
 const departments = ref([]);
@@ -126,6 +129,40 @@ const assignmentHeaders = computed(() => {
 const selectedSemesterName = computed(() =>
   semesters.value.find((semester) => semester.id === semesterId.value)?.name || ""
 );
+
+const selectedUniversity = computed(() =>
+  universities.value.find((university) => university.id === universityId.value) || null
+);
+
+const provostName = (provost) => {
+  if (!provost) return "";
+  return `${provost.lName}, ${provost.fName}`;
+};
+
+const downloadReport = async () => {
+  if (!canLoad.value || !selectedUniversity.value) return;
+  exporting.value = true;
+  errorMessage.value = "";
+  try {
+    const outcomeResponse = await UniversityOutcomeServices.getByUniversityId(universityId.value);
+    const university = selectedUniversity.value;
+    const semester = semesters.value.find((item) => item.id === semesterId.value);
+    const doc = buildCoreAssessmentPdf({
+      universityName: university.name || "",
+      provostName: provostName(university.provost),
+      semesterName: semester?.name || selectedSemesterName.value,
+      semesterStartDate: semester?.startDate || "",
+      outcomes: outcomeResponse.data || [],
+      assessmentOutcomes: outcomes.value,
+    });
+    const semesterLabel = semester?.name || selectedSemesterName.value || "semester";
+    doc.save(`core-assessment-${university.name || university.id}-${semesterLabel}.pdf`);
+  } catch (error) {
+    errorMessage.value = error.response?.data?.message || "Error creating the core assessment report";
+  } finally {
+    exporting.value = false;
+  }
+};
 
 const sectionLabel = (assignment) => {
   if (!assignment?.courseSection) return "";
@@ -282,6 +319,16 @@ onMounted(async () => {
           ></v-autocomplete>
         </v-col>
       </v-row>
+
+      <v-btn
+        color="primary"
+        class="mb-4"
+        :disabled="!canLoad || loading || exporting"
+        :loading="exporting"
+        @click="downloadReport"
+      >
+        Create PDF
+      </v-btn>
 
       <v-alert v-if="errorMessage" type="error" class="mb-4" variant="tonal">
         {{ errorMessage }}
