@@ -23,7 +23,7 @@ const assignmentDialogs = ref({});
 const retrieveStats = () => {
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = response.data;
+      semesters.value = SemesterServices.sortSemestersByDateDesc(response.data);
       totalSemesters.value = response.data.length;
       if (response.data.length > 0) {
         selectedSemester.value = response.data[0].id;
@@ -205,8 +205,8 @@ const openAssignmentDialog = async (course) => {
 const loadAvailableSemesters = (course) => {
   SemesterServices.getAll()
     .then((response) => {
-      course.availableSemesters = response.data.filter(
-        (s) => s.id !== course.semesterId
+      course.availableSemesters = SemesterServices.sortSemestersByDateDesc(
+        response.data.filter((s) => s.id !== course.semesterId)
       );
       course.selectedSemesterForAssignment = null;
       course.availableCourses = [];

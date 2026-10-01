@@ -33,7 +33,7 @@ const paginatedCourses = computed(() => {
 const retrieveSemesters = () => {
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = response.data.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+      semesters.value = SemesterServices.sortSemestersByDateDesc(response.data);
       if (response.data.length > 0) {
         selectedSemester.value = response.data[0].id;
         retrieveCourses();
