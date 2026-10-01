@@ -17,7 +17,7 @@ const departments = ref([]);
 const semesters = ref([]);
 const outcomes = ref([]);
 const universityId = ref(null);
-const semesterId = ref(null);
+const semesterIds = ref([]);
 const errorMessage = ref("");
 const user = ref(null);
 
@@ -106,10 +106,13 @@ const detailsDialog = ref(false);
 const selectedOutcome = ref(null);
 
 const selectedSemesterName = computed(() =>
-  semesters.value.find((semester) => semester.id === semesterId.value)?.name || ""
+  semesters.value
+    .filter((semester) => semesterIds.value.includes(semester.id))
+    .map((semester) => semester.name)
+    .join(", ")
 );
 
-const canLoad = computed(() => Boolean(universityId.value && semesterId.value));
+const canLoad = computed(() => Boolean(universityId.value && semesterIds.value.length));
 
 const applyUniversitySelection = () => {
   if (lockedUniversity.value) {
@@ -171,7 +174,7 @@ const loadOutcomes = () => {
   }
   loading.value = true;
   errorMessage.value = "";
-  UniversityAssessmentServices.getForUniversitySemester(universityId.value, semesterId.value)
+  UniversityAssessmentServices.getForUniversitySemester(universityId.value, semesterIds.value)
     .then((response) => {
       outcomes.value = response.data || [];
     })
@@ -203,9 +206,9 @@ const ensureUser = async () => {
   }
 };
 
-watch([universityId, semesterId], () => {
+watch([universityId, semesterIds], () => {
   loadOutcomes();
-});
+}, { deep: true });
 
 onMounted(async () => {
   await ensureUser();
@@ -224,7 +227,7 @@ onMounted(async () => {
 
       <v-row>
         <v-col cols="12" md="6">
-          <div v-if="lockedUniversity" class="d-flex align-center" style="min-height: 56px">
+          <div v-if="lockedUniversity" class="v-card-title px-0">
             {{ lockedUniversity.name }}
           </div>
           <v-autocomplete
@@ -240,11 +243,14 @@ onMounted(async () => {
         </v-col>
         <v-col cols="12" md="6">
           <v-autocomplete
-            v-model="semesterId"
+            v-model="semesterIds"
             :items="semesters"
             item-title="name"
             item-value="id"
-            label="Semester"
+            label="Semesters"
+            multiple
+            chips
+            closable-chips
             :loading="loadingSemesters"
             clearable
           ></v-autocomplete>

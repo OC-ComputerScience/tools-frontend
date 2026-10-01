@@ -215,10 +215,10 @@ onMounted(() => {
 
         <v-card-actions>
           <v-spacer></v-spacer>
-          <v-btn color="blue-darken-1" variant="text" @click="close">
+          <v-btn color="blue-darken-1" variant="text" @click="close" class="dialog-cancel">
             Cancel
           </v-btn>
-          <v-btn color="blue-darken-1" variant="text" @click="save">
+          <v-btn color="blue-darken-1" variant="text" @click="save" class="dialog-save">
             Save
           </v-btn>
         </v-card-actions>

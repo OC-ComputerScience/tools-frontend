@@ -64,7 +64,7 @@ const selectedDepartment = computed(() =>
 
 const departmentLabel = (department) => {
   if (!department) return "";
-  return `${department.code} - ${department.name}`;
+  return department.name || "";
 };
 
 const filteredOutcomes = computed(() => {
@@ -114,10 +114,7 @@ const isFormValid = computed(() => {
 
 const universityOutcomeLabel = (outcome) => {
   if (!outcome) return "";
-  const university = outcome.university?.name;
-  const level = outcome.level === "graduate" ? "Graduate" : "Undergraduate";
-  const label = `${outcome.number} - ${outcome.name} (${level})`;
-  return university ? `${label} - ${university}` : label;
+  return `${outcome.number} - ${outcome.name}`;
 };
 
 const universityOutcomesForDepartment = computed(() => {
@@ -134,9 +131,9 @@ const universityOutcomesForDepartment = computed(() => {
 });
 
 const headers = [
-  { title: "University Outcomes", key: "universityOutcomes", sortable: false },
   { title: "Number", key: "number", sortable: true },
   { title: "Name", key: "name", sortable: true },
+  { title: "University Outcomes", key: "universityOutcomes", sortable: false },
   { title: "Level", key: "level", sortable: true },
   { title: "Effective Date", key: "effectiveDate", sortable: true },
   { title: "End Date", key: "endDate", sortable: true },
@@ -211,7 +208,12 @@ const onLevelChange = () => {
 const universityOutcomeListLabel = (item) => {
   const assigned = item.universityOutcomes || [];
   if (!assigned.length) return "";
-  return assigned.map(universityOutcomeLabel).join(", ");
+  return assigned
+    .map((outcome) => {
+      const level = outcome.level === "graduate" ? "Graduate" : "Undergraduate";
+      return `${outcome.number} - ${outcome.name} (${level})`;
+    })
+    .join(", ");
 };
 
 const clearUniversityOutcomeIfNotAllowed = () => {
@@ -329,7 +331,7 @@ onMounted(async () => {
 
       <v-row>
         <v-col cols="12" md="6">
-          <div v-if="lockedDepartment" class="d-flex align-center" style="min-height: 56px">
+          <div v-if="lockedDepartment" class="v-card-title px-0">
             {{ departmentLabel(lockedDepartment) }}
           </div>
           <v-autocomplete
@@ -458,14 +460,13 @@ onMounted(async () => {
 
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" text @click="close">Cancel</v-btn>
+            <v-btn color="blue darken-1" text @click="close" class="dialog-cancel">Cancel</v-btn>
             <v-btn
               color="blue darken-1"
               text
               @click="save"
               :disabled="!isFormValid"
-              >Save</v-btn
-            >
+               class="dialog-save">Save</v-btn>
           </v-card-actions>
         </v-card>
       </v-dialog>
@@ -478,7 +479,7 @@ onMounted(async () => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="grey darken-1" text @click="deleteDialog = false">Cancel</v-btn>
+            <v-btn color="grey darken-1" text @click="deleteDialog = false" class="dialog-cancel">Cancel</v-btn>
             <v-btn color="error" text @click="confirmDelete">Delete</v-btn>
           </v-card-actions>
         </v-card>

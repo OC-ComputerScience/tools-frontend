@@ -163,7 +163,7 @@ onMounted(() => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn variant="text" @click="confirmClear = false">Cancel</v-btn>
+            <v-btn variant="text" @click="confirmClear = false" class="dialog-cancel">Cancel</v-btn>
             <v-btn color="error" variant="text" @click="clearGrades">Remove</v-btn>
           </v-card-actions>
         </v-card>

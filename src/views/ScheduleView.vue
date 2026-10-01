@@ -1823,7 +1823,7 @@ onMounted(() => {
               color="grey"
               variant="text"
               @click="showOfficeHoursDialog = false"
-            >
+             class="dialog-cancel">
               Cancel
             </v-btn>
             <v-btn color="primary" @click="generatePDF"> Generate PDF </v-btn>
