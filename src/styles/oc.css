@@ -1,0 +1,128 @@
+@font-face {
+  font-family: "Standard CT";
+  src: url("/fonts/standardextracond-medium-2015.02.25-webfont.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+.v-application {
+  background: #ffffff;
+  color: #000000;
+  font-family: "sofia-pro", sofia-pro, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.v-application .v-btn,
+.v-application .v-field,
+.v-application .v-label,
+.v-application .v-list,
+.v-application .v-data-table,
+.v-application .v-messages,
+.v-application .text-body-1,
+.v-application .text-body-2 {
+  font-family: "sofia-pro", sofia-pro, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+.v-application .v-btn {
+  text-transform: none;
+  box-shadow: none;
+}
+
+.v-application .text-body-2,
+.v-application .text-caption {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.v-application .text-caption,
+.v-application .text-medium-emphasis {
+  color: #707070;
+  opacity: 1;
+}
+
+.v-application a {
+  color: #48111c;
+}
+
+.v-app-bar .v-btn--active,
+.v-app-bar .router-link-active {
+  color: #48111c !important;
+}
+
+.v-main .v-toolbar {
+  background: #811429 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.v-main .v-toolbar-title {
+  font-family: "Standard CT", "StandardCT", sans-serif;
+  font-size: 28px !important;
+  font-weight: 400 !important;
+  line-height: 1 !important;
+  letter-spacing: 0 !important;
+  text-transform: uppercase;
+  color: #ffffff !important;
+}
+
+.v-main .v-toolbar .v-btn {
+  background: #ffffff !important;
+  color: #811429 !important;
+  font-weight: 700 !important;
+}
+
+.page-heading {
+  background: #811429;
+  color: #ffffff;
+  font-family: "Standard CT", "StandardCT", sans-serif;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  padding: 16px;
+}
+
+.v-main .v-container > .v-row:has(.v-input) {
+  background: #f4f4f4;
+  margin-bottom: 16px;
+  padding: 12px 8px 0;
+}
+
+.v-data-table .v-data-table__th,
+.v-data-table thead th,
+.v-table thead th {
+  background: #f4f4f4 !important;
+  color: #000000 !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+}
+
+.v-card,
+.v-btn,
+.v-field,
+.v-sheet,
+.v-alert,
+.v-list,
+.v-overlay__content {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.v-dialog > .v-overlay__content > .v-card {
+  border: 1px solid #707070;
+}
+
+.v-btn.dialog-save {
+  background-color: #811429 !important;
+  color: #ffffff !important;
+}
+
+.v-btn.dialog-cancel {
+  background-color: #707070 !important;
+  color: #ffffff !important;
+}

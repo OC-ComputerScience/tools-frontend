@@ -17,6 +17,13 @@ const rolesDisplay = computed(() => {
   return roleNames[0] || "User";
 });
 
+const isDepartmentChair = computed(() => {
+  if (!user.value?.roles || !Array.isArray(user.value.roles)) return false;
+  return user.value.roles.some(
+    (role) => (role.name || "").toLowerCase() === "department chair",
+  );
+});
+
 onMounted(async () => {
   user.value = Utils.getStore("user");
   
@@ -44,7 +51,24 @@ onMounted(async () => {
       <br />
       <v-card>
         <v-card-text>
-          <h1>Welcome to the {{ rolesDisplay }} Tools</h1>
+          <h1 v-if="!isDepartmentChair">Welcome to the {{ rolesDisplay }} Tools</h1>
+          <template v-else>
+            <p class="text-body-1">
+              You can use this system to help you create a Department Assessment.
+              You can set up your Department Learning Outcomes and associate them
+              with the University Learning Outcomes, add assignments and associate
+              them with Department Outcomes and view the department assessments.
+              The system will get the scores of the assignments from Canvas and
+              tabulate them for Departmental Assessment. The departmental results
+              will be rolled up for College and University Assessment.
+            </p>
+            <p class="text-body-1 mt-4">
+              You can also use this system to add assignments and mark them for
+              Core Assessment and associate them to University Learning Outcomes.
+              The system will get the scores of the assignments from Canvas and
+              tabulate them for Core Assessment.
+            </p>
+          </template>
         </v-card-text>
       </v-card>
     </v-container>

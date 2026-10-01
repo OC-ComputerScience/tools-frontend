@@ -144,8 +144,8 @@ onMounted(() => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn text @click="closeDialog">Cancel</v-btn>
-            <v-btn color="primary" @click="savePrefixKeyword">Save</v-btn>
+            <v-btn text @click="closeDialog" class="dialog-cancel">Cancel</v-btn>
+            <v-btn color="primary" @click="savePrefixKeyword" class="dialog-save">Save</v-btn>
           </v-card-actions>
         </v-card>
       </v-dialog>

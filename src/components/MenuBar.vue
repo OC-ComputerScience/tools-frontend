@@ -1,6 +1,6 @@
 <script setup>
 import ocLogo from "/oc-logo-white.png";
-import { ref, onMounted, computed, watch } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from "vue";
 import Utils from "../config/utils";
 import AuthServices from "../services/authServices";
 import MenuOptionServices from "../services/menuOptionServices";
@@ -14,6 +14,9 @@ const initials = ref("");
 const name = ref("");
 const logoURL = ref("");
 const allMenuOptions = ref([]);
+const menuOptionsEl = ref(null);
+const barHeight = ref(64);
+let menuObserver;
 
 const resetMenu = async () => {
   user.value = null;
@@ -90,6 +93,16 @@ const accessibleMenuOptions = computed(() => {
   });
 });
 
+const syncBarHeight = () => {
+  const menu = menuOptionsEl.value;
+  if (!menu) {
+    barHeight.value = 64;
+    return;
+  }
+  const next = Math.max(64, menu.scrollHeight + 16);
+  if (next !== barHeight.value) barHeight.value = next;
+};
+
 const menuLink = (menuOption) => {
   if (menuOption.routeName && router.hasRoute(menuOption.routeName)) {
     return { to: { name: menuOption.routeName } };
@@ -111,10 +124,17 @@ const isAdminUser = computed(() => {
   return false;
 });
 
-// Get default route based on user: Admin -> dashboard, Faculty -> facultyDashboard
+const isDeanUser = computed(() => {
+  if (!user.value?.roles || !Array.isArray(user.value.roles)) return false;
+  return user.value.roles.some((role) => (role.name || "").toLowerCase() === "dean");
+});
+
+// Admin -> dashboard, Dean -> deanDashboard, Faculty -> facultyDashboard
 const defaultRoute = computed(() => {
   if (!user.value) return { name: "login" };
-  return isAdminUser.value ? { name: "dashboard" } : { name: "facultyDashboard" };
+  if (isAdminUser.value) return { name: "dashboard" };
+  if (isDeanUser.value) return { name: "deanDashboard" };
+  return { name: "facultyDashboard" };
 });
 
 const logout = () => {
@@ -135,15 +155,32 @@ watch(() => user.value, () => {
   }
 });
 
+watch(menuOptionsEl, (el) => {
+  menuObserver?.disconnect();
+  if (!el) {
+    barHeight.value = 64;
+    return;
+  }
+  menuObserver = new ResizeObserver(() => syncBarHeight());
+  menuObserver.observe(el);
+  syncBarHeight();
+});
+
+watch(accessibleMenuOptions, () => nextTick(syncBarHeight));
+
 onMounted(() => {
   logoURL.value = ocLogo;
   resetMenu();
+});
+
+onBeforeUnmount(() => {
+  menuObserver?.disconnect();
 });
 </script>
 
 <template>
   <div>
-    <v-app-bar app>
+    <v-app-bar class="app-menu-bar" :height="barHeight">
       <router-link :to="defaultRoute">
         <v-img
           class="mx-2"
@@ -156,8 +193,11 @@ onMounted(() => {
       <v-toolbar-title class="title">
         {{ title }}
       </v-toolbar-title>
-      <v-spacer></v-spacer>
-      <div v-if="user && accessibleMenuOptions.length > 0">
+      <div
+        v-if="user && accessibleMenuOptions.length > 0"
+        ref="menuOptionsEl"
+        class="menu-options"
+      >
         <v-btn
           v-for="menuOption in accessibleMenuOptions"
           :key="menuOption.id"
@@ -167,21 +207,19 @@ onMounted(() => {
           {{ menuOption.option }}
         </v-btn>
       </div>
-      <v-menu bottom min-width="200px" rounded offset-y v-if="user">
+      <v-menu bottom min-width="200px" offset-y v-if="user">
         <template v-slot:activator="{ props }">
-          <v-btn v-bind="props" icon x-large>
-            <v-avatar v-if="user" color="secondary">
-              <span class="accent--text font-weight-bold">{{ initials }}</span>
+          <v-btn v-bind="props" icon class="profile-button" color="primary">
+            <v-avatar v-if="user" class="profile-button" color="primary">
+              <span class="profile-initials">{{ initials }}</span>
             </v-avatar>
           </v-btn>
         </template>
         <v-card>
           <v-card-text>
             <div class="mx-auto text-center">
-              <v-avatar color="secondary" class="mt-2 mb-2">
-                <span class="accent--text font-weight-bold">{{
-                  initials
-                }}</span>
+              <v-avatar class="profile-button mt-2 mb-2" color="primary">
+                <span class="profile-initials">{{ initials }}</span>
               </v-avatar>
               <h3>{{ name }}</h3>
               <p class="text-caption mt-1">
@@ -189,7 +227,7 @@ onMounted(() => {
               </p>
               <p v-if="user.isAdmin" class="text-caption mt-1">Admin</p>
               <v-divider class="my-3"></v-divider>
-              <v-btn depressed rounded text @click="logout"> Logout </v-btn>
+              <v-btn depressed text @click="logout"> Logout </v-btn>
             </div>
           </v-card-text>
         </v-card>
@@ -197,3 +235,47 @@ onMounted(() => {
     </v-app-bar>
   </div>
 </template>
+
+<style>
+.app-menu-bar .v-toolbar__content {
+  overflow: visible !important;
+  height: auto !important;
+  align-items: center;
+}
+
+.app-menu-bar .v-toolbar-title {
+  flex: 0 0 auto;
+  font-family: "Standard CT", "StandardCT", sans-serif;
+  font-size: 28px !important;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.menu-options {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  align-self: flex-start;
+  min-width: 0;
+  row-gap: 4px;
+}
+
+.menu-options .v-btn {
+  font-weight: 700;
+}
+
+.v-app-bar .profile-button.v-btn,
+.v-avatar.profile-button {
+  border-radius: 50% !important;
+  background-color: #811429 !important;
+  color: #ffffff !important;
+}
+
+.profile-initials {
+  color: #ffffff !important;
+  font-weight: 700;
+}
+</style>

@@ -395,14 +395,14 @@ onMounted(() => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" variant="text" @click="close">Cancel</v-btn>
+            <v-btn color="blue darken-1" variant="text" @click="close" class="dialog-cancel">Cancel</v-btn>
             <v-btn
               color="blue darken-1"
               variant="text"
               :disabled="!isFormValid"
               :loading="saving"
               @click="save"
-            >
+             class="dialog-save">
               Save
             </v-btn>
           </v-card-actions>
@@ -464,14 +464,14 @@ onMounted(() => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn variant="text" @click="closeSectionDialog">Cancel</v-btn>
+            <v-btn variant="text" @click="closeSectionDialog" class="dialog-cancel">Cancel</v-btn>
             <v-btn
               color="primary"
               variant="text"
               :disabled="!isSectionFormValid"
               :loading="sectionsSaving"
               @click="saveSection"
-            >
+             class="dialog-save">
               Save
             </v-btn>
           </v-card-actions>
@@ -487,7 +487,7 @@ onMounted(() => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn variant="text" @click="sectionDeleteDialog = false">Cancel</v-btn>
+            <v-btn variant="text" @click="sectionDeleteDialog = false" class="dialog-cancel">Cancel</v-btn>
             <v-btn color="error" variant="text" @click="confirmDeleteSection">Delete</v-btn>
           </v-card-actions>
         </v-card>
@@ -501,7 +501,7 @@ onMounted(() => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="grey darken-1" variant="text" @click="deleteDialog = false">Cancel</v-btn>
+            <v-btn color="grey darken-1" variant="text" @click="deleteDialog = false" class="dialog-cancel">Cancel</v-btn>
             <v-btn color="error" variant="text" @click="confirmDelete">Delete</v-btn>
           </v-card-actions>
         </v-card>
