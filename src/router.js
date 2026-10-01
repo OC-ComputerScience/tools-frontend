@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import Login from "./views/Login.vue";
 import FacultyCoursesList from "./views/FacultyCoursesList.vue";
 import FacultyDashboard from "./views/FacultyDashboard.vue";
+import DeanDashboard from "./views/DeanDashboard.vue";
 import AdminDashboard from "./views/AdminDashboard.vue";
 import AdminImport from "./views/AdminImport.vue";
 import AdminUsersList from "./views/AdminUsersList.vue";
@@ -44,6 +45,11 @@ const router = createRouter({
       path: "/faculty",
       name: "facultyDashboard",
       component: FacultyDashboard,
+    },
+    {
+      path: "/dean",
+      name: "deanDashboard",
+      component: DeanDashboard,
     },
     {
       path: "/faculty/courses",

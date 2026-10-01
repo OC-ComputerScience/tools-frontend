@@ -267,8 +267,8 @@ onMounted(() => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn variant="text" @click="close">Cancel</v-btn>
-            <v-btn color="primary" variant="text" :disabled="!isFormValid" @click="save">Save</v-btn>
+            <v-btn variant="text" @click="close" class="dialog-cancel">Cancel</v-btn>
+            <v-btn color="primary" variant="text" :disabled="!isFormValid" @click="save" class="dialog-save">Save</v-btn>
           </v-card-actions>
         </v-card>
       </v-dialog>
@@ -281,7 +281,7 @@ onMounted(() => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn variant="text" @click="deleteDialog = false">Cancel</v-btn>
+            <v-btn variant="text" @click="deleteDialog = false" class="dialog-cancel">Cancel</v-btn>
             <v-btn color="error" variant="text" @click="confirmDelete">Delete</v-btn>
           </v-card-actions>
         </v-card>

@@ -132,6 +132,7 @@ export const buildDepartmentAssessmentPdf = ({
   chairName = "",
   semesterName = "",
   semesterStartDate = "",
+  semesterStartDates = [],
   outcomes = [],
   assessmentOutcomes = [],
   assignments = [],
@@ -158,8 +159,14 @@ export const buildDepartmentAssessmentPdf = ({
   });
   y += 4;
 
-  const semesterStart = dateKey(semesterStartDate);
-  const activeOutcomes = outcomes.filter((outcome) => outcomeInEffect(outcome, semesterStart));
+  const semesterStarts = (semesterStartDates.length ? semesterStartDates : [semesterStartDate])
+    .map(dateKey)
+    .filter(Boolean);
+  const activeOutcomes = outcomes.filter((outcome) =>
+    semesterStarts.length
+      ? semesterStarts.some((start) => outcomeInEffect(outcome, start))
+      : true
+  );
   const activeOutcomeIds = new Set(activeOutcomes.map((outcome) => Number(outcome.id)));
   const activeAssessmentOutcomes = assessmentOutcomes.filter((outcome) =>
     activeOutcomeIds.has(Number(outcome.id))
@@ -226,10 +233,10 @@ export const buildDepartmentAssessmentPdf = ({
   const assignmentColumns = [
     { title: "Outcome", key: "outcome", width: 32 },
     { title: "Course", key: "course", width: 32 },
-    { title: "Section", key: "section", width: 26 },
+    { title: "Section", key: "section", width: 36 },
     { title: "Assignment", key: "name", width: 38 },
     { title: "Total Points", key: "totalPoints", width: 22 },
-    { title: "Description", key: "description", width: 44 },
+    { title: "Description", key: "description", width: 34 },
     { title: "Assessment Score", key: "averageScore", width: 30 },
     { title: "Student Scores", key: "gradeCount", width: 28 },
   ];
@@ -246,7 +253,7 @@ export const buildDepartmentAssessmentPdf = ({
           : course.number
         : row.courseNumber || "";
       const section = row.courseSection
-        ? `${row.courseNumber || ""}-${row.courseSection}`
+        ? `${row.semesterName ? `${row.semesterName} ` : ""}${row.courseNumber || ""}-${row.courseSection}`
         : "";
       assignmentRows.push({
         outcome: outcomeLabel(outcome),

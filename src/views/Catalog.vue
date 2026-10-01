@@ -2,7 +2,7 @@
   <v-container>
     <v-row>
       <v-col cols="12">
-        <h1>Catalogs</h1>
+        <h1 class="page-heading">Catalogs</h1>
         <v-btn color="primary" @click="openDialog()">Add Catalog</v-btn>
       </v-col>
     </v-row>
@@ -13,7 +13,7 @@
           :headers="headers"
           :items="catalogs"
           :loading="loading"
-          class="elevation-1"
+          class="oc-table"
         >
           <template v-slot:item.actions="{ item }">
             <v-icon small class="mr-2" @click="editItem(item)">
@@ -67,8 +67,8 @@
 
         <v-card-actions>
           <v-spacer></v-spacer>
-          <v-btn color="blue darken-1" text @click="close">Cancel</v-btn>
-          <v-btn color="blue darken-1" text @click="save">Save</v-btn>
+          <v-btn color="blue darken-1" text @click="close" class="dialog-cancel">Cancel</v-btn>
+          <v-btn color="blue darken-1" text @click="save" class="dialog-save">Save</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>

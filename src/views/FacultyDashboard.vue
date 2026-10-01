@@ -2,12 +2,7 @@
 import { ref, onMounted, computed } from "vue";
 import Utils from "../config/utils.js";
 import UserServices from "../services/userServices.js";
-import { useRouter } from "vue-router";
 
-// Change to 1 to show full instructions with button; 2 = closed message with no button
-const FACULTY_HOME_VERSION = 2;
-
-const router = useRouter();
 const user = ref(null);
 
 onMounted(async () => {
@@ -29,14 +24,12 @@ onMounted(async () => {
   }
 });
 
-const userName = computed(() => {
-  if (!user.value) return "";
-  return `${user.value.fName || ""} ${user.value.lName || ""}`.trim();
+const isDepartmentChair = computed(() => {
+  if (!user.value?.roles || !Array.isArray(user.value.roles)) return false;
+  return user.value.roles.some(
+    (role) => (role.name || "").toLowerCase() === "department chair",
+  );
 });
-
-const goToImportCourses = () => {
-  router.push({ name: "facultyCourses" });
-};
 </script>
 
 <template>
@@ -48,73 +41,29 @@ const goToImportCourses = () => {
       <br />
       <v-card>
         <v-card-text>
-          <h1>
-            Welcome to the Faculty Tools{{ userName ? `, ${userName}` : "" }}
-          </h1>
+          <p v-if="!isDepartmentChair" class="text-body-1">
+            There are no tools available for you right now.
+          </p>
+          <template v-else>
+            <p class="text-body-1">
+              You can use this system to help you create a Department Assessment.
+              You can set up your Department Learning Outcomes and associate them
+              with the University Learning Outcomes, add assignments and associate
+              them with Department Outcomes and view the department assessments.
+              The system will get the scores of the assignments from Canvas and
+              tabulate them for Departmental Assessment. The departmental results
+              will be rolled up for College and University Assessment.
+            </p>
+            <p class="text-body-1 mt-4">
+              You can also use this system to add assignments and mark them for
+              Core Assessment and associate them to University Learning Outcomes.
+              The system will get the scores of the assignments from Canvas and
+              tabulate them for Core Assessment.
+            </p>
+          </template>
         </v-card-text>
       </v-card>
 
-      <!-- Version 1: Full instructions with button -->
-      <template v-if="FACULTY_HOME_VERSION === 1">
-        <v-card class="mt-4">
-          <v-card-title>Primary Instructions</v-card-title>
-          <v-card-text>
-            <div class="text-body-1 mb-3">
-              This tool lets you specify exactly which Blackboard courses you
-              want to have imported into Canvas for the courses you teach.
-            </div>
-            <div class="text-body-1 mb-3">
-              For courses in the Summer 2026 or Fall 2026 semesters, you can
-              assign a course from the past (back to Fall 2023) to import, or
-              you can select to not import a course, which means you want to
-              start from a blank template in Canvas. If you choose to import a
-              course from Blackboard into Canvas, the conversion goes reasonably
-              well in most cases, but there will still be work to do once the
-              content is inside of Canvas. You will receive training on how to
-              do this work.
-            </div>
-            <div class="text-body-1 mb-4">
-              For courses that you teach but are not in the Summer 2026 or Fall
-              2026 schedule, you can specify a Blackboard course from the past
-              to be copied into Canvas so it will be available in that past term
-              for you to use in the future.
-            </div>
-          </v-card-text>
-        </v-card>
-
-        <v-card class="mt-4">
-          <v-card-title>Alternate Instructions</v-card-title>
-          <v-card-text>
-            <div class="text-body-1 mb-3">
-              For future semesters: For each course, assign a Blackboard course
-              from a past semester to be copied into Canvas, or indicate that
-              you do not want to import a course (you will start from a blank
-              template in Canvas).
-            </div>
-            <div class="text-body-1 mb-3">
-              For past semesters: You may assign a Blackboard course in the same
-              semester to be copied into Canvas for future use when setting up
-              courses. Note: when you click assign, the course is assigned to
-              itself (no dialog is displayed).
-            </div>
-            <div class="text-center">
-              <v-btn color="primary" @click="goToImportCourses">
-                Click to Assign Blackboard Courses to Import into Canvas
-              </v-btn>
-            </div>
-          </v-card-text>
-        </v-card>
-      </template>
-
-      <!-- Version 2: Closed message with no button -->
-      <v-card v-else class="mt-4">
-        <v-card-text>
-          <div class="text-body-1">
-            Assigning Blackboard courses for copying into Canvas is currently
-            closed. It may open again in the future.
-          </div>
-        </v-card-text>
-      </v-card>
     </v-container>
   </div>
 </template>

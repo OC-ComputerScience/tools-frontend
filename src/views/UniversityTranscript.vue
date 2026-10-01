@@ -441,14 +441,13 @@ onMounted(() => {
 
         <v-card-actions>
           <v-spacer></v-spacer>
-          <v-btn color="blue darken-1" text @click="close">Cancel</v-btn>
+          <v-btn color="blue darken-1" text @click="close" class="dialog-cancel">Cancel</v-btn>
           <v-btn
             color="blue darken-1"
             text
             @click="save"
             :disabled="!isFormValid"
-            >Save</v-btn
-          >
+             class="dialog-save">Save</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -472,8 +471,8 @@ onMounted(() => {
                   @dragleave.prevent="isDragging = false"
                   @drop.prevent="handleDrop"
                   style="
-                    border: 2px dashed #ccc;
-                    border-radius: 8px;
+                    border: 2px dashed #707070;
+                    border-radius: 0;
                     cursor: pointer;
                   "
                   @click="triggerFileInput"
@@ -529,8 +528,7 @@ onMounted(() => {
         <v-card-actions>
           <v-spacer></v-spacer>
           <v-btn color="blue darken-1" text @click="closeUploadDialog"
-            >Cancel</v-btn
-          >
+             class="dialog-cancel">Cancel</v-btn>
           <v-btn
             color="blue darken-1"
             text

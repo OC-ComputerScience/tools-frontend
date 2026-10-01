@@ -20,7 +20,7 @@ const departments = ref([]);
 const semesters = ref([]);
 const outcomes = ref([]);
 const universityId = ref(null);
-const semesterId = ref(null);
+const semesterIds = ref([]);
 const errorMessage = ref("");
 const user = ref(null);
 
@@ -126,8 +126,12 @@ const assignmentHeaders = computed(() => {
   ];
 });
 
+const selectedSemesters = computed(() =>
+  semesters.value.filter((semester) => semesterIds.value.includes(semester.id))
+);
+
 const selectedSemesterName = computed(() =>
-  semesters.value.find((semester) => semester.id === semesterId.value)?.name || ""
+  selectedSemesters.value.map((semester) => semester.name).join(", ")
 );
 
 const selectedUniversity = computed(() =>
@@ -146,16 +150,15 @@ const downloadReport = async () => {
   try {
     const outcomeResponse = await UniversityOutcomeServices.getByUniversityId(universityId.value);
     const university = selectedUniversity.value;
-    const semester = semesters.value.find((item) => item.id === semesterId.value);
     const doc = buildCoreAssessmentPdf({
       universityName: university.name || "",
       provostName: provostName(university.provost),
-      semesterName: semester?.name || selectedSemesterName.value,
-      semesterStartDate: semester?.startDate || "",
+      semesterName: selectedSemesterName.value,
+      semesterStartDates: selectedSemesters.value.map((semester) => semester.startDate),
       outcomes: outcomeResponse.data || [],
       assessmentOutcomes: outcomes.value,
     });
-    const semesterLabel = semester?.name || selectedSemesterName.value || "semester";
+    const semesterLabel = selectedSemesterName.value.replaceAll(", ", "-") || "semesters";
     doc.save(`core-assessment-${university.name || university.id}-${semesterLabel}.pdf`);
   } catch (error) {
     errorMessage.value = error.response?.data?.message || "Error creating the core assessment report";
@@ -164,10 +167,18 @@ const downloadReport = async () => {
   }
 };
 
+const departmentName = (department) => {
+  const text = String(department || "");
+  const separator = " - ";
+  const index = text.indexOf(separator);
+  return index === -1 ? text : text.slice(index + separator.length);
+};
+
 const sectionLabel = (assignment) => {
   if (!assignment?.courseSection) return "";
   const description = assignment.courseDescription ? ` ${assignment.courseDescription}` : "";
-  return `${assignment.courseNumber}-${assignment.courseSection}${description}`;
+  const semester = assignment.semesterName ? `${assignment.semesterName} ` : "";
+  return `${semester}${assignment.courseNumber}-${assignment.courseSection}${description}`;
 };
 
 const scorePercent = (item, key) => {
@@ -183,7 +194,7 @@ const openDetails = (outcome) => {
   detailsDialog.value = true;
 };
 
-const canLoad = computed(() => Boolean(universityId.value && semesterId.value));
+const canLoad = computed(() => Boolean(universityId.value && semesterIds.value.length));
 
 const applyUniversitySelection = () => {
   if (lockedUniversity.value) {
@@ -259,7 +270,7 @@ const loadAssessment = () => {
   }
   loading.value = true;
   errorMessage.value = "";
-  CoreAssessmentServices.getForUniversitySemester(universityId.value, semesterId.value)
+  CoreAssessmentServices.getForUniversitySemester(universityId.value, semesterIds.value)
     .then((response) => {
       outcomes.value = response.data || [];
     })
@@ -272,9 +283,9 @@ const loadAssessment = () => {
     });
 };
 
-watch([universityId, semesterId], () => {
+watch([universityId, semesterIds], () => {
   loadAssessment();
-});
+}, { deep: true });
 
 onMounted(async () => {
   await ensureUser();
@@ -293,7 +304,7 @@ onMounted(async () => {
 
       <v-row>
         <v-col cols="12" md="6">
-          <div v-if="lockedUniversity" class="d-flex align-center" style="min-height: 56px">
+          <div v-if="lockedUniversity" class="v-card-title px-0">
             {{ lockedUniversity.name }}
           </div>
           <v-autocomplete
@@ -309,11 +320,14 @@ onMounted(async () => {
         </v-col>
         <v-col cols="12" md="6">
           <v-autocomplete
-            v-model="semesterId"
+            v-model="semesterIds"
             :items="semesters"
             item-title="name"
             item-value="id"
-            label="Semester"
+            label="Semesters"
+            multiple
+            chips
+            closable-chips
             :loading="loadingSemesters"
             clearable
           ></v-autocomplete>
@@ -373,6 +387,9 @@ onMounted(async () => {
             >
               <template v-slot:[`item.section`]="{ item }">
                 {{ sectionLabel(item) }}
+              </template>
+              <template v-slot:[`item.department`]="{ item }">
+                {{ departmentName(item.department) }}
               </template>
               <template v-slot:[`item.averageScore`]="{ item }">
                 {{ item.averageScore == null ? "" : item.averageScore }}

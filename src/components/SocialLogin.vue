@@ -52,6 +52,17 @@ const isAdminUser = (userData) => {
   return false;
 };
 
+const isDeanUser = (userData) => {
+  if (!userData?.roles || !Array.isArray(userData.roles)) return false;
+  return userData.roles.some((role) => (role.name || "").toLowerCase() === "dean");
+};
+
+const homeRouteName = (userData) => {
+  if (isAdminUser(userData)) return "dashboard";
+  if (isDeanUser(userData)) return "deanDashboard";
+  return "facultyDashboard";
+};
+
 const handleCredentialResponse = async (response) => {
   let token = {
     credential: response.credential,
@@ -63,9 +74,7 @@ const handleCredentialResponse = async (response) => {
       fName.value = user.value.fName;
       lName.value = user.value.lName;
 
-      // Redirect: Admin to Admin Home, Faculty to Faculty Home
-      const routeName = isAdminUser(user.value) ? "dashboard" : "facultyDashboard";
-      router.push({ name: routeName });
+      router.push({ name: homeRouteName(user.value) });
     })
     .catch((error) => {
       console.log("error", error);

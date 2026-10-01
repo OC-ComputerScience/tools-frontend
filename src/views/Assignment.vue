@@ -57,7 +57,7 @@ const selectedDepartment = computed(() =>
 
 const departmentLabel = (department) => {
   if (!department) return "";
-  return `${department.code} - ${department.name}`;
+  return department.name || "";
 };
 
 const courseLabel = (course) => {
@@ -316,7 +316,7 @@ onMounted(async () => {
 
       <v-row>
         <v-col cols="12" md="6">
-          <div v-if="lockedDepartment" class="d-flex align-center" style="min-height: 56px">
+          <div v-if="lockedDepartment" class="v-card-title px-0">
             {{ departmentLabel(lockedDepartment) }}
           </div>
           <v-autocomplete
@@ -447,14 +447,13 @@ onMounted(async () => {
 
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="blue darken-1" text @click="close">Cancel</v-btn>
+            <v-btn color="blue darken-1" text @click="close" class="dialog-cancel">Cancel</v-btn>
             <v-btn
               color="blue darken-1"
               text
               @click="save"
               :disabled="!isFormValid"
-              >Save</v-btn
-            >
+               class="dialog-save">Save</v-btn>
           </v-card-actions>
         </v-card>
       </v-dialog>
@@ -467,7 +466,7 @@ onMounted(async () => {
           </v-card-text>
           <v-card-actions>
             <v-spacer></v-spacer>
-            <v-btn color="grey darken-1" text @click="deleteDialog = false">Cancel</v-btn>
+            <v-btn color="grey darken-1" text @click="deleteDialog = false" class="dialog-cancel">Cancel</v-btn>
             <v-btn color="error" text @click="confirmDelete">Delete</v-btn>
           </v-card-actions>
         </v-card>

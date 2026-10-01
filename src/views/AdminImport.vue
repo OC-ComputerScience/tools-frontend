@@ -540,8 +540,7 @@ onMounted(() => {
           <v-card-actions>
             <v-spacer></v-spacer>
             <v-btn text @click="assignmentDialogs[course.id] = false"
-              >Cancel</v-btn
-            >
+               class="dialog-cancel">Cancel</v-btn>
             <v-btn color="primary" @click="assignCourse(course)">Assign</v-btn>
           </v-card-actions>
         </v-card>

@@ -48,7 +48,8 @@ const scorePercent = (item, key) => {
 const sectionLabel = (assignment) => {
   if (!assignment?.courseSection) return "";
   const description = assignment.courseDescription ? ` ${assignment.courseDescription}` : "";
-  return `${assignment.courseNumber}-${assignment.courseSection}${description}`;
+  const semester = assignment.semesterName ? `${assignment.semesterName} ` : "";
+  return `${semester}${assignment.courseNumber}-${assignment.courseSection}${description}`;
 };
 
 const cellText = (value) => (value == null ? "" : String(value));
@@ -149,6 +150,7 @@ export const buildCoreAssessmentPdf = ({
   provostName = "",
   semesterName = "",
   semesterStartDate = "",
+  semesterStartDates = [],
   outcomes = [],
   assessmentOutcomes = [],
 }) => {
@@ -172,8 +174,14 @@ export const buildCoreAssessmentPdf = ({
   });
   y += 4;
 
-  const semesterStart = dateKey(semesterStartDate);
-  const activeOutcomes = outcomes.filter((outcome) => outcomeInEffect(outcome, semesterStart));
+  const semesterStarts = (semesterStartDates.length ? semesterStartDates : [semesterStartDate])
+    .map(dateKey)
+    .filter(Boolean);
+  const activeOutcomes = outcomes.filter((outcome) =>
+    semesterStarts.length
+      ? semesterStarts.some((start) => outcomeInEffect(outcome, start))
+      : true
+  );
   const activeOutcomeIds = new Set(activeOutcomes.map((outcome) => Number(outcome.id)));
   const activeAssessmentOutcomes = assessmentOutcomes.filter((outcome) =>
     activeOutcomeIds.has(Number(outcome.id))
