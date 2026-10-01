@@ -141,14 +141,10 @@ const sortedTranscriptCourses = computed(() => {
     });
   });
 
-  // Sort semesters by start date for dropdowns
-  const sortedSemesters = computed(() => {
-    return [...semesters.value].sort((a, b) => {
-      const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
-      const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
-      return dateA - dateB; // Sort ascending (oldest first)
-    });
-  });
+  // Sort semesters by start date, most recent first
+  const sortedSemesters = computed(() =>
+    SemesterServices.sortSemestersByDateDesc(semesters.value)
+  );
 
 const initialize = async () => {
   loading.value = true;
@@ -211,7 +207,7 @@ const initialize = async () => {
 
   await SemesterServices.getAll()
     .then((response) => {
-      semesters.value = response.data;
+      semesters.value = SemesterServices.sortSemestersByDateDesc(response.data);
     })
     .catch((error) => {
       console.error("Error fetching semesters:", error);

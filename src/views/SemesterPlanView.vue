@@ -55,7 +55,7 @@ const daysOfWeek = [
 const retrieveSemesters = () => {
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = response.data;
+      semesters.value = SemesterServices.sortSemestersByDateDesc(response.data);
     })
     .catch((e) => {
       message.value = e.response?.data?.message || "Error loading semesters";

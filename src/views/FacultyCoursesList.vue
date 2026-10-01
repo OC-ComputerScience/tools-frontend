@@ -85,18 +85,14 @@ const retrieveSemesters = () => {
   SemesterServices.getAll()
     .then((response) => {
       // Filter to semesters with start date on or after 1/1/2023, then sort by startDate descending (newest first)
-      semesters.value = response.data
-        .filter((s) => {
+      semesters.value = SemesterServices.sortSemestersByDateDesc(
+        response.data.filter((s) => {
           if (!s.startDate) return false;
           const startDate = new Date(s.startDate);
           startDate.setHours(0, 0, 0, 0);
           return startDate >= MIN_SEMESTER_START;
         })
-        .sort((a, b) => {
-          const dateA = new Date(a.startDate);
-          const dateB = new Date(b.startDate);
-          return dateB - dateA; // Descending order (newest first)
-        });
+      );
     })
     .catch((e) => {
       message.value = e.response?.data?.message || "Error loading semesters";
@@ -335,15 +331,15 @@ const openAssignmentDialog = async (course) => {
 const loadAvailableSemesters = (course) => {
   SemesterServices.getAll()
     .then((response) => {
-      course.availableSemesters = response.data
-        .filter((s) => {
+      course.availableSemesters = SemesterServices.sortSemestersByDateDesc(
+        response.data.filter((s) => {
           if (s.id === course.semesterId) return false;
           if (!s.startDate) return false;
           const startDate = new Date(s.startDate);
           startDate.setHours(0, 0, 0, 0);
           return startDate >= MIN_SEMESTER_START;
         })
-        .sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+      );
       course.selectedSemesterForAssignment = null;
       course.availableCourses = [];
     })
