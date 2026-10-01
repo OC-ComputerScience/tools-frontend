@@ -24,12 +24,7 @@ const loadSemesters = () => {
   loading.value = true;
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = (response.data || []).slice().sort((a, b) =>
-        String(b.name || "").localeCompare(String(a.name || ""), undefined, {
-          numeric: true,
-          sensitivity: "base",
-        })
-      );
+      semesters.value = SemesterServices.sortSemestersByDateDesc(response.data);
     })
     .catch((error) => {
       errorMessage.value = error.response?.data?.message || "Error loading semesters";

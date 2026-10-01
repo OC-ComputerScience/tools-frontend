@@ -213,16 +213,19 @@ const ensureUser = async () => {
   }
 };
 
+const semesterStartValue = (semester) => {
+  const match = String(semester?.startDate ?? "").match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return 0;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+};
+
 const loadSemesters = () => {
   loadingSemesters.value = true;
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = (response.data || []).slice().sort((a, b) =>
-        String(b.name || "").localeCompare(String(a.name || ""), undefined, {
-          numeric: true,
-          sensitivity: "base",
-        })
-      );
+      const rows = Array.isArray(response.data) ? response.data.map((semester) => ({ ...semester })) : [];
+      rows.sort((left, right) => semesterStartValue(right) - semesterStartValue(left));
+      semesters.value = rows;
     })
     .catch((error) => {
       errorMessage.value = error.response?.data?.message || "Error loading semesters";
@@ -287,8 +290,8 @@ onMounted(async () => {
             clearable
           ></v-autocomplete>
         </v-col>
-        <v-col cols="12" md="6">
-          <v-autocomplete
+        <v-col cols="12" md="3">
+          <v-select
             v-model="semesterIds"
             :items="semesters"
             item-title="name"
@@ -299,7 +302,8 @@ onMounted(async () => {
             closable-chips
             :loading="loadingSemesters"
             clearable
-          ></v-autocomplete>
+            :menu-props="{ maxHeight: 320, location: 'bottom' }"
+          ></v-select>
         </v-col>
       </v-row>
 

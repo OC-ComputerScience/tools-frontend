@@ -130,7 +130,7 @@ const initialize = () => {
     });
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = response.data || [];
+      semesters.value = SemesterServices.sortSemestersByDateDesc(response.data);
     })
     .catch((error) => {
       errorMessage.value = error.response?.data?.message || "Error loading semesters";

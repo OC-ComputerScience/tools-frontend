@@ -120,7 +120,7 @@ const initialize = () => {
 
   SemesterServices.getAll()
     .then((response) => {
-      semesters.value = response.data;
+      semesters.value = SemesterServices.sortSemestersByDateDesc(response.data);
     })
     .catch((error) => {
       console.error("Error fetching semesters:", error);
